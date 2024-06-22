@@ -60,7 +60,7 @@ def logout():
 	if request.method == 'POST':
 		try:
 			data = request.get_json(force=True)
-			if(not sqlAuth.delete_token(data['token'], token=data["token"])):
+			if(not sqlAuth.delete_token(data['token'])):
 				return jsonify({"failure": "Failed to logout"}), 400
 
 			return jsonify({"success": "Logout complete"}), 200

@@ -144,8 +144,8 @@ class sqlAuth:
 			token = cursor.fetchone()
 			return token[2]
 
-		except Exception as e:
-			print("Error getting token: ", e)
+		except TypeError as e:
+			print("Token not found: ", e)
 			return ''
 
 		finally:
@@ -156,6 +156,7 @@ class sqlAuth:
 
 	def update_token(token) -> bool:
 		try:
+			print("Updating token: ", token)
 			cnx = pool.get_connection()
 			cursor = cnx.cursor()
 			cursor.execute("UPDATE tblTokens SET created_at = %s WHERE token = %s", [datetime.now(), token])
