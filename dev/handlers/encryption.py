@@ -22,6 +22,8 @@ class Encryption:
 
 		self.public_keys = {}
 
+		
+
 	def load_private_key(self):
 		try:
 			with open(os.path.join(script_dir, "../keys/hrs/private_key.pem"), "rb") as key_file:
@@ -97,7 +99,6 @@ class Encryption:
 			else:
 				message = self.__toString({"data": dick})
 
-			print(type(message))
 			encMessage = self.public_keys[token].encrypt(
 				message.encode(),
 				padding.OAEP(
@@ -106,8 +107,6 @@ class Encryption:
 					label=None,
 				)
 			)
-
-			print(encMessage)
 
 
 			return  {"transfer": encMessage.decode('latin1')}

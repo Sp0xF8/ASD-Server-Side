@@ -31,23 +31,16 @@ pool = pooling.MySQLConnectionPool(
 
 def check_auth(func):
 	def wrapper(*args, **kwargs):
-		print("Checking Auth: ", args, kwargs)
 		try:
 			if 'token' not in kwargs:
 				raise ValueError("Token is required to access this function.")
 
 			token = kwargs.pop('token')
 
-			print("Checking token: ", token)
-
 			if (sqlAuth.check_token(token=token) != 2):
 				raise ValueError("Token is invalid.")
 			
-			print("Token is valid")
-
 			sqlAuth.update_token(token)
-
-			print("token updated")
 
 			return func(*args, **kwargs)
 
@@ -66,7 +59,7 @@ class sqlAuth:
 			cursor = cnx.cursor()
 
 			token = hashlib.sha256(str(random.getrandbits(256)).encode()).hexdigest()
-			print(len(token))
+			
 			cursor.execute("INSERT INTO tblTokens (employee_id, token) VALUES (%s, %s)", [user_id, token])
 			cnx.commit()
 
@@ -121,13 +114,13 @@ class sqlAuth:
 			tokenret = cursor.fetchone()
 
 			timestamp = tokenret[3] #datetime.datetime timestamp
-			print("Timestamp: ", timestamp)
-			print("type: ", type(timestamp))
 
 			if (datetime.now() - timestamp).seconds > 3600:
 				print("Token expired")
 				sqlAuth.delete_token(token)
 				return 1
+			
+			print("Token is Valid")
 			
 			return 2
 		
@@ -155,7 +148,7 @@ class sqlAuth:
 			return token[2]
 
 		except TypeError as e:
-			print("Token not found: ", e)
+			print("Token not found: User does not yet have a token")
 			return ''
 
 		finally:
@@ -187,7 +180,7 @@ class sqlAuth:
 		try:
 
 
-			print("Logging in: ", email, password)
+			print("Logging in: ", email)
 			cnx = pool.get_connection()
 			cursor = cnx.cursor()
 			cursor.execute("SELECT * FROM tblEmployees WHERE email = %s AND password = %s", [email, password])
@@ -196,7 +189,7 @@ class sqlAuth:
 				return ''
 			
 			user = cursor.fetchone()
-			print("User found: ", user[0], user[1], user[2], user[3])
+			print("User found: ", user[3])
 
 			token = sqlAuth.__get_token(user[0])
 
@@ -249,7 +242,6 @@ class sqlBranch:
 	@check_auth
 	def get_branches() -> dict:
 		try:
-			print("getting branches")
 			cnx = pool.get_connection()
 			cursor = cnx.cursor()
 			cursor.execute("SELECT * FROM tblBranches")
@@ -392,6 +384,26 @@ class sqlLocation:
 				cnx.close()
 
 	@check_auth
+	def update(loc_id, city) -> bool:
+		try:
+			print("Updating Locatioin: ", loc_id, city)
+			cnx = pool.get_connection()
+			cursor = cnx.cursor()
+			cursor.execute("UPDATE tblLocations SET city = %s WHERE id = %s", [city, loc_id])
+			cnx.commit()
+			return True
+
+		except sqlError as e:
+			print("Error updating branch: ", e)
+			return False
+
+		finally:
+			if cursor:
+				cursor.close()
+			if cnx:
+				cnx.close()
+
+	@check_auth
 	def delete(location_id) -> bool:
 		try:
 
@@ -413,6 +425,7 @@ class sqlLocation:
 
 class sqlEmployee:
 
+	@check_auth
 	def create(first_name, last_name, email, password, branchID, position) -> bool:
 		try:
 
@@ -433,6 +446,7 @@ class sqlEmployee:
 			if cnx:
 				cnx.close()
 	
+	@check_auth
 	def get_all() -> list:
 		try:
 
@@ -452,6 +466,7 @@ class sqlEmployee:
 			if cnx:
 				cnx.close()
 
+	@check_auth
 	def get(employee_id) -> dict:
 		try:
 
@@ -472,6 +487,7 @@ class sqlEmployee:
 				cnx.close()
 
 
+	@check_auth
 	def update(employee_id, first_name, last_name, email, old_password, new_password=None) -> bool:
 
 		try:
@@ -498,6 +514,7 @@ class sqlEmployee:
 			if cnx:
 				cnx.close()
 
+	@check_auth
 	def delete(employee_id) -> bool:
 		try:
 
