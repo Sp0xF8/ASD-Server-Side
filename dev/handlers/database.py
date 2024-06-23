@@ -11,9 +11,11 @@ import random
 import hashlib
 import time
 from datetime import datetime
+import os
 
 
 load_dotenv()
+script_dir = os.path.dirname(os.path.abspath(__file__))
 
 number_of_restraunts = 5
 
@@ -44,6 +46,8 @@ def check_auth(func):
 			print("Token is valid")
 
 			sqlAuth.update_token(token)
+
+			print("token updated")
 
 			return func(*args, **kwargs)
 
@@ -84,6 +88,12 @@ class sqlAuth:
 			cursor = cnx.cursor()
 			cursor.execute("DELETE FROM tblTokens WHERE token = %s", [token])
 			cnx.commit()
+
+
+			if(os.path.exists(os.path.join(script_dir, "../keys/" + token + ".pem"))):
+				os.remove(os.path.join(script_dir, "../keys/" + token + ".pem"))
+				print("Token file deleted")
+
 			return True
 
 		except sqlError as e:
@@ -237,13 +247,15 @@ class sqlBranch:
 				cnx.close()
 
 	@check_auth
-	def get_branches() -> list:
+	def get_branches() -> dict:
 		try:
-
+			print("getting branches")
 			cnx = pool.get_connection()
 			cursor = cnx.cursor()
 			cursor.execute("SELECT * FROM tblBranches")
 			result = cursor.fetchall()
+
+
 			return result
 
 		except sqlError as e:

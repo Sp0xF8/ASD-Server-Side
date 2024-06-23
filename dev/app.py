@@ -1,7 +1,11 @@
 from flask import Flask, request, jsonify, session
 from handlers.database import sqlBranch, sqlLocation, sqlEmployee, sqlAuth
 
+from handlers.encryption import Encryption
+
 app = Flask(__name__)
+
+encryption = Encryption()
 
 @app.route('/')
 def home():
@@ -59,7 +63,9 @@ def login():
 def logout():
 	if request.method == 'POST':
 		try:
+
 			data = request.get_json(force=True)
+
 			if(not sqlAuth.delete_token(data['token'])):
 				return jsonify({"failure": "Failed to logout"}), 400
 
@@ -96,9 +102,19 @@ def getBranches():
 		try:
 			data = request.get_json(force=True)
 
+			print(data)
+
 			result = sqlBranch.get_branches(token=data["token"])
-			return jsonify(result), 200
+
+			print(result)
+
+			encrypted_result = encryption.encrypt(data['token'], result)
+
+			print(encrypted_result)
+
+			return jsonify(encrypted_result), 200
 		except Exception as e:
+			print(e)
 			return jsonify({"error": str(e)}), 400
 
 @app.route('/api/v1/getBranch', methods=['POST'])
@@ -263,6 +279,10 @@ def deleteEmployee():
 			return jsonify({"error": str(e)}), 400
 
 if __name__ == '__main__':
+
+
+
+
 
 	app.run(debug=True)
 
