@@ -62,15 +62,17 @@ def login():
 	if request.method == 'POST':
 		
 		try:
-			data = request.get_json(force=True)
+			data, tag = decryptRecieved(request)
 
 			token = sqlAuth.login(data['email'], data['password'])
 
-			print(token)
+			encrypted_message = encryption.hsencrypt(tag, {"token": token})
+
+			
 			if(token == ''):
 				return jsonify({"failure": "Failed to login"}), 400
 			
-			return jsonify({"success": "Login complete", "token": token}), 200
+			return jsonify({"success": "Login complete", "transfer": encrypted_message}), 200
 
 		except Exception as e:
 			return jsonify({"error": str(e)}), 400
