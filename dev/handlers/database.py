@@ -250,13 +250,11 @@ class sqlBranch:
 			cursor = cnx.cursor()
 			cursor.execute("SELECT * FROM tblBranches")
 			result = cursor.fetchall()
-
-
 			return result
 
 		except sqlError as e:
 			print("Error getting branches: ", e)
-			return []
+			return None
 
 		finally:
 			if cursor:
@@ -276,7 +274,7 @@ class sqlBranch:
 
 		except sqlError as e:
 			print("Error getting branch: ", e)
-			return {}
+			return None
 
 		finally:
 			if cursor:
@@ -359,7 +357,7 @@ class sqlLocation:
 
 		except sqlError as e:
 			print("Error getting locations: ", e)
-			return []
+			return None
 
 		finally:
 			if cursor:
@@ -379,7 +377,7 @@ class sqlLocation:
 
 		except sqlError as e:
 			print("Error getting location: ", e)
-			return {}
+			return None
 
 		finally:
 			if cursor:
@@ -462,7 +460,7 @@ class sqlEmployee:
 
 		except sqlError as e:
 			print("Error getting employees: ", e)
-			return []
+			return None
 
 		finally:
 			if cursor:
@@ -482,7 +480,7 @@ class sqlEmployee:
 
 		except sqlError as e:
 			print("Error getting employee: ", e)
-			return {}
+			return None
 
 		finally:
 			if cursor:
@@ -543,5 +541,104 @@ class sqlEmployee:
 				cursor.close()
 			if cnx:
 				cnx.close()
+
+class sqlSisters:
+	@check_auth
+	def create(branch1, branch2, location) -> bool:
+		try:
+
+			cnx = pool.get_connection()
+			cursor = cnx.cursor()
+			cursor.execute("INSERT INTO tblBranches (name) VALUES (%s), (%s)", [branch1, branch2])
+
+			cursor.execute("INSERT INTO tblLocations (city) VALUES (%s)", [location])
+			
+
+			cursor.execute("SELECT LAST_INSERT_ID()")
+			if cursor.rowcount == 0:
+				return False
+			location_id = cursor.fetchone()[0]
+
+			cursor.execute("SELECT id FROM tblBranches ORDER BY id DESC LIMIT 2")
+			if cursor.rowcount == 0:
+				return False
+			ids = cursor.fetchall()
+
+
+			cursor.execute("INSERT INTO lnkSisterBranches (branch_id_1, branch_id_2, location_id) VALUES (%s, %s, %s)", [ids[0][0], ids[1][0], location_id])
+
+			cnx.commit()
+			return True
+		except sqlError as e:
+			print("Error inserting: ", e)
+			return False
+
+	@check_auth
+	def get_all() -> list:
+		try:
+
+			cnx = pool.get_connection()
+			cursor = cnx.cursor()
+			cursor.execute("""SELECT 
+								ls.id,
+								b1.name AS branch1_name,
+								b2.name AS branch2_name,
+								l.city AS location_city
+							FROM 
+								lnkSisterBranches ls
+							JOIN 
+								tblBranches b1 ON ls.branch_id_1 = b1.id
+							JOIN 
+								tblBranches b2 ON ls.branch_id_2 = b2.id
+							JOIN 
+								tblLocations l ON ls.location_id = l.id;
+				""")
+			
+			result = cursor.fetchall()
+
+			print(result)
+			return result
+		
+		except sqlError as e:
+			print("Error getting sisters: ", e)
+			return None
+		
+	@check_auth
+	def get(sister_id) -> dict:
+		try:
+
+			cnx = pool.get_connection()
+			cursor = cnx.cursor()
+			cursor.execute("""SELECT 
+								ls.id,
+								b1.name AS branch1_name,
+								b2.name AS branch2_name,
+								l.city AS location_city
+							FROM 
+								lnkSisterBranches ls
+							JOIN 
+								tblBranches b1 ON ls.branch_id_1 = b1.id
+							JOIN 
+								tblBranches b2 ON ls.branch_id_2 = b2.id
+							JOIN 
+								tblLocations l ON ls.location_id = l.id
+							WHERE
+				  			ls.id = %s;
+				""", [sister_id])
+			
+			if cursor.rowcount == 0:
+				raise Exception("Sister does not exist")
+
+			result = cursor.fetchone()
+			return result
+
+		except sqlError as e:
+			print("Error getting sisters: ", e)
+			return None
+		except Exception as e:
+			print("Error getting sisters: ", e)
+			return None
+		
+
 
 
