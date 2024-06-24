@@ -238,6 +238,10 @@ def createEmployee():
 	if request.method == 'POST':
 		try:
 			data, token = decryptRecieved(request)
+
+
+
+
 			if(sqlEmployee.create(data["first_name"], data["last_name"], data["email"], data["password"], data["branch_id"], data["position"], token=token)):
 				return returnEncrypted(token, {"success": "Table Insertion Complete"}, 200)
 			else:
@@ -253,9 +257,19 @@ def getEmployees():
 			data = request.get_json(force=True)
 			result = sqlEmployee.get_all(token=data["token"])
 
-			result['timestamp'] = result['timestamp'].seconds
+			retList = []
 
-			return returnEncrypted(data['token'], result, 200)
+			print(result)
+			for res in result:
+
+				resList = list(res)
+				resList[5] = resList[5].strftime("%Y-%m-%d %H:%M:%S")
+				resList[6] = resList[6].strftime("%Y-%m-%d %H:%M:%S")
+				retList.append(resList)
+
+			print(retList)
+
+			return returnEncrypted(data['token'], retList, 200)
 		except Exception as e:
 			print(e)
 			return jsonify({"error": str(e)}), 400
@@ -266,7 +280,12 @@ def getEmployee():
 		try:
 			data, token = decryptRecieved(request)
 			result = sqlEmployee.get(data["employee_id"], token=token)
-			result['timestamp'] = result['timestamp'].seconds
+
+			result = list(result)
+
+			print(result)
+			result[5] = result[5].strftime("%Y-%m-%d %H:%M:%S")
+			result[6] = result[6].strftime("%Y-%m-%d %H:%M:%S")
 
 			return returnEncrypted(token, result, 200)
 		except Exception as e:

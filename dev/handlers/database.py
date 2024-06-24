@@ -44,9 +44,13 @@ def check_auth(func):
 
 			return func(*args, **kwargs)
 
+		except sqlError as e:
+			print("sqlError", str(e))
+			return {"sql error:": str(e)}
 		except Exception as e:
 			print("Error in check_auth: ", e)
 			return {"error": str(e)}
+		
 		
 
 	return wrapper
@@ -491,15 +495,21 @@ class sqlEmployee:
 	def update(employee_id, first_name, last_name, email, old_password, new_password=None) -> bool:
 
 		try:
+			print("updating")
 
 			cnx = pool.get_connection()
 			cursor = cnx.cursor()
 			cursor.execute("SELECT * FROM tblEmployees WHERE id = %s AND password = %s", [employee_id, old_password])
-			if not cursor.rowcount > 0:
+			if cursor.rowcount == 0:
 				return False
+			
+			print("employee valid")
+			cursor.fetchall()
 
 			cursor.execute("UPDATE tblEmployees SET first_name = %s, last_name = %s, email = %s WHERE id = %s", [first_name, last_name, email, employee_id])
-			if new_password:
+			print("updated std")
+
+			if not new_password == None:
 				cursor.execute("UPDATE tblEmployees SET password = %s WHERE id = %s", [new_password, employee_id])
 
 			cnx.commit()
