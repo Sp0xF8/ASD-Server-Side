@@ -22,6 +22,9 @@ def returnEncrypted(token, data, code):
 	return jsonify(encrypted_result), code
 
 
+def errorCallback(err):
+	raise Exception(err)
+
 
 @app.route('/')
 def home():
@@ -133,12 +136,12 @@ def getBranch():
 		
 			result = sqlBranch.get_branch(data["branch_id"], token=token)
 			if result == None:
-				raise Exception("Could not get the requested branch data")
+				raise Exception("Could not get the requested branch data, likely an invalid id")
 
 			return returnEncrypted(token, result, 200)
 		except Exception as e:
 			print(e)
-			return jsonify({"error": str(e)}), 200
+			return returnEncrypted(token, {"error": str(e)}, 400)
 
 @app.route('/api/v1/updateBranch', methods=['POST'])
 def updateBranch():
@@ -323,6 +326,23 @@ def deleteEmployee():
 			return returnEncrypted(token, {"success": "Entry deletion Complete"}, 200)
 		except Exception as e:
 			return returnEncrypted(token, {"error": str(e)}, 400)
+		
+@app.route('/api/v1/updateRegister', methods=['POST'])
+def updateRegister():
+	if request.method == 'POST':
+		try:
+			data, token = decryptRecieved(request)
+
+			if(not sqlEmployee.Register.update(data["employee_id"], branch_id=data["branch_id"], position=data['position'], token=token)):
+				raise Exception("Could not update Employee data")
+
+			return returnEncrypted(token, {"success": "Table Update Complete"}, 200)
+		except Exception as e:
+			return returnEncrypted(token, {"error": str(e)}, 400)
+		
+###
+### 		SISTERHOOD API ROUTES
+###				C.R.U.D. & FIND
 
 @app.route('/api/v1/createSisterhood', methods=['POST'])
 def createSisterhood():
@@ -336,7 +356,6 @@ def createSisterhood():
 			return returnEncrypted(token, {"success": "Table Insertion Complete"}, 200)
 		except Exception as e:
 			return returnEncrypted(token, {"error": str(e)}, 400)
-
 
 @app.route('/api/v1/getSisterhoods', methods=['POST'])
 def getSisterhoods():
@@ -364,9 +383,46 @@ def getSisterhood():
 			return returnEncrypted(token, result, 200)
 		except Exception as e:
 			return returnEncrypted(token, {"error": str(e)}, 400)
+
+@app.route('/api/v1/updateSisterhood', methods=['POST']) 
+def updateSisterhood():
+	if request.method == 'POST':
+		try:
+			data, token = decryptRecieved(request)
+
+			if(not sqlSisters.update(data["sisterhood_id"], data["branch1"], data["branch2"], data["location"], token=token)):
+				raise Exception("Could not update Sisterhood data")
+
+			return returnEncrypted(token, {"success": "Table Update Complete"}, 200)
+		except Exception as e:
+			return returnEncrypted(token, {"error": str(e)}, 400)
 		
+@app.route('/api/v1/deleteSisterhood', methods=['POST']) 
+def deleteSisterhood():
+	if request.method == 'POST':
+		try:
+			data, token = decryptRecieved(request)
 
+			if(not sqlSisters.delete(data["sisterhood_id"], token=token)):
+				raise Exception("Failed to delete Sisterhood entry")
 
+			return returnEncrypted(token, {"success": "Entry deletion Complete"}, 200)
+		except Exception as e:
+			return returnEncrypted(token, {"error": str(e)}, 400)
+
+@app.route('/api/v1/findSisterhood', methods=['POST'])
+def findSisterhood():
+	if request.method == 'POST':
+		try:
+			data, token = decryptRecieved(request)
+
+			result = sqlSisters.find(data["search"], token=token)
+			if result == None:
+				raise Exception("Could not find Sisterhood")
+
+			return returnEncrypted(token, result, 200)
+		except Exception as e:
+			return returnEncrypted(token, {"error": str(e)}, 400)
 
 if __name__ == '__main__':
 

@@ -49,7 +49,7 @@ def check_auth(func):
 			return {"sql error:": str(e)}
 		except Exception as e:
 			print("Error in check_auth: ", e)
-			return {"error": str(e)}
+			raise Exception(e)
 		
 		
 
@@ -542,6 +542,38 @@ class sqlEmployee:
 			if cnx:
 				cnx.close()
 
+	class Register:
+		
+		@check_auth
+		def update(employee_id, branch_id, position) -> bool:
+			try:
+				cnx = pool.get_connection()
+				cursor = cnx.cursor()
+				
+				if branch_id != 0:
+					cursor.execute("UPDATE lnkEmployeeRegister SET branch_id = %s WHERE employee_id = %s", [branch_id, employee_id])
+					if cursor.rowcount == 0:
+						raise Exception("Branch does not exist")
+					
+				if position != "":
+					cursor.execute("UPDATE lnkEmployeeRegister SET position = %s WHERE employee_id = %s", [position, employee_id])
+					if cursor.rowcount == 0:
+						raise Exception("Position does not exist")
+					
+				cnx.commit()
+				return True
+			except sqlError as e:
+				print("Error updating: ", e)
+				raise Exception(e)
+			except Exception as e:
+				print("Error updating: ", e)
+				raise Exception(e)
+			finally:
+				if cursor:
+					cursor.close()
+				if cnx:
+					cnx.close()
+
 class sqlSisters:
 	@check_auth
 	def create(branch1, branch2, location) -> bool:
@@ -638,7 +670,165 @@ class sqlSisters:
 		except Exception as e:
 			print("Error getting sisters: ", e)
 			return None
+
+	@check_auth
+	def update(sister_id, branch1:str, branch2:str, location:str) -> bool:
+		try:
+
+			print(branch1, branch2, location)
+			cnx = pool.get_connection()
+			cursor = cnx.cursor()
+
+			cursor.execute("SELECT * FROM lnkSisterBranches WHERE id = %s", [sister_id])
+			if cursor.rowcount == 0:
+				raise Exception("Sister does not exist")
+			cursor.fetchall()
+
+			if branch1 != "":
+				print("updating branch 1")
+				cursor.execute("UPDATE lnkSisterBranches SET branch_id_1 = (SELECT id FROM tblBranches WHERE name = %s) WHERE id = %s", [branch1, sister_id])
+				if cursor.rowcount == 0:
+					raise Exception("Branch 1 does not exist")
+				
+
+			if branch2 != "":
+				print("updating branch 2")
+				cursor.execute("UPDATE lnkSisterBranches SET branch_id_2 = (SELECT id FROM tblBranches WHERE name = %s) WHERE id = %s", [branch2, sister_id])
+				if cursor.rowcount == 0:
+					raise Exception("Branch 2 does not exist")
+
+			if location != "":
+				print("updating location")
+				cursor.execute("UPDATE lnkSisterBranches SET location_id = (SELECT id FROM tblLocations WHERE city = %s) WHERE id = %s", [location, sister_id])
+				if cursor.rowcount == 0:
+					raise Exception("Branch 2 does not exist")
+
+			cnx.commit()
+			return True
 		
+		except sqlError as e:
+			print(e)
+			raise Exception(e)
 
+		except Exception as e:
+			print("Error updating: ", e)
+			raise Exception(e)
+		
+		finally:
+			if cursor:
+				cursor.close()
+			if cnx:
+				cnx.close()
+		
+	@check_auth
+	def delete(sister_id) -> bool:
 
+		try:
+			cnx = pool.get_connection()
+			cursor = cnx.cursor()
 
+			cursor.execute("SELECT * FROM lnkSisterBranches WHERE id = %s", [sister_id])
+			if cursor.rowcount == 0:
+				raise Exception("Sister does not exist")
+			
+			sister = cursor.fetchone()
+
+			cursor.execute("DELETE FROM lnkSisterBranches WHERE id = %s", [sister_id])
+			if cursor.rowcount == 0:
+				raise Exception("Sister could not be deletes")
+
+			cursor.execute("DELETE FROM tblBranches WHERE id = (%s)", [sister[1]])
+			if cursor.rowcount == 0:
+				raise Exception("Branche could not be deleted")
+			
+			cursor.execute("DELETE FROM tblBranches WHERE id = (%s)", [sister[2]])
+			if cursor.rowcount == 0:
+				raise Exception("Branche could not be deleted")
+
+			cursor.execute("DELETE FROM tblLocations WHERE id = %s", [sister[3]])
+			if cursor.rowcount == 0:
+				raise Exception("Location could not be deleted")
+			cnx.commit()
+
+			return True
+		except sqlError as err:
+			print(f"Error: {err}")
+			if cnx:
+				cnx.rollback()
+			raise
+		except Exception as e:
+			print(f"Error: {e}")
+			if cnx:
+				cnx.rollback()
+			raise
+		finally:
+			if cursor:
+				cursor.close()
+			if cnx:
+				cnx.close()
+
+	@check_auth
+	def find(search) -> dict:
+		try:
+			cnx = pool.get_connection()
+			cursor = cnx.cursor()
+			cursor.execute("""SELECT 
+								ls.id,
+								b1.name AS branch1_name,
+								b2.name AS branch2_name,
+								l.city AS location_city
+							FROM 
+								lnkSisterBranches ls
+							JOIN 
+								tblBranches b1 ON ls.branch_id_1 = b1.id
+							JOIN 
+								tblBranches b2 ON ls.branch_id_2 = b2.id
+							JOIN 
+								tblLocations l ON ls.location_id = l.id
+							WHERE
+				  			b1.name = %s OR b2.name = %s OR l.city = %s;
+				""", [search, search, search])
+			
+			if cursor.rowcount == 0:
+				raise Exception("Sister does not exist")
+
+			result = cursor.fetchone()
+			return result
+
+		except sqlError as e:
+			print("Error getting sisters: ", e)
+			return None
+		except Exception as e:
+			print("Error getting sisters: ", e)
+			return None
+		finally:
+			if cursor:
+				cursor.close()
+			if cnx:
+				cnx.close()
+
+class sqlStock:
+
+	def create(name, max, price) -> bool:
+		try:
+
+			cnx = pool.get_connection()
+			cursor = cnx.cursor()
+			cursor.execute("INSERT INTO tblStock (name, max_stock, price) VALUES (%s, %s, %s)", [name, max, price])
+
+			if cursor.rowcount == 0:
+				raise Exception("Stock could not be created")
+			
+			cnx.commit()
+			return True
+		except sqlError as e:
+			print("Error creating stock: ", e)
+			return Exception(e)
+		except Exception as e:
+			print("Error creating stock: ", e)
+			raise Exception(e)
+		finally:
+			if cursor:
+				cursor.close()
+			if cnx:
+				cnx.close()
