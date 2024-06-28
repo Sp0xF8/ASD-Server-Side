@@ -1,5 +1,5 @@
 from flask import Flask, request, jsonify, session
-from handlers.database import sqlBranch, sqlLocation, sqlEmployee, sqlAuth, sqlSisters
+from handlers.database import sqlBranch, sqlLocation, sqlEmployee, sqlAuth, sqlSisters, sqlEmployeeDiscounts, sqlDiscounts, sqlReservations
 
 from handlers.encryption import Encryption
 
@@ -43,14 +43,14 @@ def api():
 			return jsonify(response), 200
 		except Exception as e:
 			return jsonify({"error": str(e)}), 400
-		
+
 
 	if request.method == 'GET':
 		response = {
 				"message": "Get was recieved successfully",
 				"data": "Get Was a success"
 			}
-		
+
 		try:
 			return jsonify(response), 200
 		except Exception as e:
@@ -63,7 +63,7 @@ def api():
 @app.route('/api/v1/login', methods=['POST'])
 def login():
 	if request.method == 'POST':
-		
+
 		try:
 			data, tag = decryptRecieved(request)
 
@@ -71,15 +71,15 @@ def login():
 
 			encrypted_message = encryption.hsencrypt(tag, {"token": token})
 
-			
+
 			if(token == ''):
 				return jsonify({"failure": "Failed to login"}), 400
-			
+
 			return jsonify({"success": "Login complete", "transfer": encrypted_message}), 200
 
 		except Exception as e:
 			return jsonify({"error": str(e)}), 400
-		
+
 @app.route('/api/v1/logout', methods=['POST'])
 def logout():
 	if request.method == 'POST':
@@ -109,7 +109,7 @@ def createBranch():
 
 			if(not sqlBranch.create(data["name"], token=token)):
 				raise Exception("Failed to insert data, likely a duplicate name")
-			
+
 			return returnEncrypted(token, {"success": "New branch successfully created"}, 200)
 		except Exception as e:
 			return returnEncrypted(token, {"error": str(e)}, 400)
@@ -133,7 +133,7 @@ def getBranch():
 	if request.method == 'POST':
 		try:
 			data, token = decryptRecieved(request)
-		
+
 			result = sqlBranch.get_branch(data["branch_id"], token=token)
 			if result == None:
 				raise Exception("Could not get the requested branch data, likely an invalid id")
@@ -164,7 +164,7 @@ def deleteBranch():
 
 			if(not sqlBranch.delete(data["branch_id"], token=token)):
 				raise Exception("Could not delete branch entry")
-			
+
 			return returnEncrypted(token, {"success": "Entry deletion Complete"}, 200)
 		except Exception as e:
 			return returnEncrypted(token, {"error": str(e)}, 400)
@@ -222,7 +222,7 @@ def updateLocation():
 
 			if(not sqlLocation.update(data["location_id"], data["city"], token=token)):
 				raise Exception("Could not update Location data")
-				
+
 			return returnEncrypted(token, {"success": "Location update completed successfully"}, 200)
 		except Exception as e:
 			return returnEncrypted(token, {"error": str(e)}, 400)
@@ -235,7 +235,7 @@ def deleteLocation():
 
 			if(not sqlLocation.delete(data["location_id"], token=token)):
 				raise Exception("Failed to delete Location entry")
-			
+
 			return returnEncrypted(token, {"success": "Entry deletion Complete"}, 200)
 		except Exception as e:
 			return returnEncrypted(token, {"error": str(e)}, 400)
@@ -260,7 +260,7 @@ def createEmployee():
 			return returnEncrypted(token, {"success": "Table Insertion Complete"}, 200)
 		except Exception as e:
 			return returnEncrypted(token, {"error": str(e)}, 400)
-		
+
 @app.route('/api/v1/getEmployees', methods=['POST'])
 def getEmployees():
 	if request.method == 'POST':
@@ -281,7 +281,7 @@ def getEmployees():
 			return returnEncrypted(data['token'], retList, 200)
 		except Exception as e:
 			return returnEncrypted(data['token'], {"error": str(e)}, 400)
-		
+
 @app.route('/api/v1/getEmployee', methods=['POST'])
 def getEmployee():
 	if request.method == 'POST':
@@ -298,8 +298,8 @@ def getEmployee():
 			return returnEncrypted(token, result, 200)
 		except Exception as e:
 			return returnEncrypted(token, {"error": str(e)}, 400)
-		
-@app.route('/api/v1/updateEmployee', methods=['POST']) 
+
+@app.route('/api/v1/updateEmployee', methods=['POST'])
 def updateEmployee():
 	if request.method == 'POST':
 		try:
@@ -326,7 +326,7 @@ def deleteEmployee():
 			return returnEncrypted(token, {"success": "Entry deletion Complete"}, 200)
 		except Exception as e:
 			return returnEncrypted(token, {"error": str(e)}, 400)
-		
+
 @app.route('/api/v1/updateRegister', methods=['POST'])
 def updateRegister():
 	if request.method == 'POST':
@@ -339,7 +339,7 @@ def updateRegister():
 			return returnEncrypted(token, {"success": "Table Update Complete"}, 200)
 		except Exception as e:
 			return returnEncrypted(token, {"error": str(e)}, 400)
-		
+
 ###
 ### 		SISTERHOOD API ROUTES
 ###				C.R.U.D. & FIND
@@ -370,7 +370,7 @@ def getSisterhoods():
 			return returnEncrypted(data['token'], result, 200)
 		except Exception as e:
 			return returnEncrypted(data['token'], {"error": str(e)}, 400)
-		
+
 @app.route('/api/v1/getSisterhood', methods=['POST'])
 def getSisterhood():
 	if request.method == 'POST':
@@ -384,7 +384,7 @@ def getSisterhood():
 		except Exception as e:
 			return returnEncrypted(token, {"error": str(e)}, 400)
 
-@app.route('/api/v1/updateSisterhood', methods=['POST']) 
+@app.route('/api/v1/updateSisterhood', methods=['POST'])
 def updateSisterhood():
 	if request.method == 'POST':
 		try:
@@ -396,8 +396,8 @@ def updateSisterhood():
 			return returnEncrypted(token, {"success": "Table Update Complete"}, 200)
 		except Exception as e:
 			return returnEncrypted(token, {"error": str(e)}, 400)
-		
-@app.route('/api/v1/deleteSisterhood', methods=['POST']) 
+
+@app.route('/api/v1/deleteSisterhood', methods=['POST'])
 def deleteSisterhood():
 	if request.method == 'POST':
 		try:
@@ -423,6 +423,119 @@ def findSisterhood():
 			return returnEncrypted(token, result, 200)
 		except Exception as e:
 			return returnEncrypted(token, {"error": str(e)}, 400)
+
+
+###
+### 		EMPLOYEE DISCOUNT API ROUTES
+###				C.U.
+
+@app.route('/api/v1/genDiscount', methods=['POST'])
+def genDiscount():
+	if request.method == 'POST':
+		try:
+			data, token = decryptRecieved(request)
+
+			code = sqlEmployeeDiscounts.generate(data["employee_id"], token=token)
+
+			return returnEncrypted(token, code, 200)
+		except Exception as e:
+			return returnEncrypted(token, {"error": str(e)}, 400)
+
+@app.route('/api/v1/useDiscount', methods=['POST'])
+def useDiscount():
+	if request.method == 'POST':
+		try:
+			data, token = decryptRecieved(request)
+
+			if(not sqlEmployeeDiscounts.check(data["code"], token=token)):
+				raise Exception("Discount does not exist or has already been used")
+
+			return returnEncrypted(token, {"success": "Discount code used"}, 200)
+		except Exception as e:
+			return returnEncrypted(token, {"error": str(e)}, 400)
+
+###
+### 		DISCOUNT API ROUTES
+###				C.R.U.D.
+
+@app.route('/api/v1/createDiscount', methods=['POST'])
+def createDiscount():
+	if request.method == 'POST':
+		try:
+			data, token = decryptRecieved(request)
+
+			if(not sqlDiscounts.create(data["branch_id"], data["tag"], data["code"], data["discount"], data["end_date"], token=token)):
+				raise Exception("Could not create new Discount, likely duplicate entry")
+
+			return returnEncrypted(token, {"success": "Table Insertion Complete"}, 200)
+		except Exception as e:
+			return returnEncrypted(token, {"error": str(e)}, 400)
+
+@app.route('/api/v1/getDiscounts', methods=['POST'])
+def getDiscounts():
+	if request.method == 'POST':
+		try:
+
+			data = request.get_json(force=True)
+			result = sqlDiscounts.get_all(token=data["token"])
+			if result == None:
+				raise Exception("Could not retreive Discounts from database")
+
+			return returnEncrypted(data['token'], result, 200)
+		except Exception as e:
+			return returnEncrypted(data['token'], {"error": str(e)}, 400)
+
+@app.route('/api/v1/checkDiscount', methods=['POST'])
+def checkDiscount():
+	if request.method == 'POST':
+		try:
+			data, token = decryptRecieved(request)
+
+			result = sqlDiscounts.check(data["code"], token=token)
+			print(result)
+			if result == False:
+				raise Exception("Discount invalid or expired")
+
+			return returnEncrypted(token, result, 200)
+		except Exception as e:
+			return returnEncrypted(token, {"error": str(e)}, 400)
+
+
+###
+### 		RESERVATION API ROUTES
+###				C.R.U.D.
+
+@app.route('/api/v1/createReservation', methods=['POST'])
+def createReservation():
+	if request.method == 'POST':
+		try:
+			data, token = decryptRecieved(request)
+
+			if(not sqlReservations.create(data['branch_id'], data['cus_name'], data['cus_number'], data['size'], data['requirements'], data['datetime'], token=token)):
+				raise Exception("Could not create new Reservation, likely duplicate entry")
+
+			return returnEncrypted(token, {"success": "Table Insertion Complete"}, 200)
+		except Exception as e:
+			return returnEncrypted(token, {"error": str(e)}, 400)
+
+@app.route('/api/v1/getReservations', methods=['POST'])
+def getReservations():
+	if request.method == 'POST':
+		try:
+			data, token = decryptRecieved(request)
+
+			result = sqlReservations.get_all(data['branch_id'], token=token)
+			if result == None:
+				raise Exception("Could not retreive Reservations from database")
+			
+			return returnEncrypted(token, result, 200)
+		except Exception as e:
+			return returnEncrypted(token, {"error": str(e)}, 400)
+			
+
+###
+### 		MAIN
+###
 
 if __name__ == '__main__':
 

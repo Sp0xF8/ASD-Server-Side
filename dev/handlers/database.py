@@ -35,23 +35,27 @@ def check_auth(func):
 			if 'token' not in kwargs:
 				raise ValueError("Token is required to access this function.")
 
+			if 'access_level' not in kwargs:
+				access_level = ["Manager"]
+			else:
+				access_level = kwargs.pop('access_level')
+
 			token = kwargs.pop('token')
+
 
 			if (sqlAuth.check_token(token=token) != 2):
 				raise ValueError("Token is invalid.")
-			
+
 			sqlAuth.update_token(token)
 
-			return func(*args, **kwargs)
+			sqlAuth.check_access(token=token, access_level=access_level)
 
-		except sqlError as e:
-			print("sqlError", str(e))
-			return {"sql error:": str(e)}
+			return func(*args, **kwargs)
 		except Exception as e:
 			print("Error in check_auth: ", e)
 			raise Exception(e)
-		
-		
+
+
 
 	return wrapper
 
@@ -63,7 +67,7 @@ class sqlAuth:
 			cursor = cnx.cursor()
 
 			token = hashlib.sha256(str(random.getrandbits(256)).encode()).hexdigest()
-			
+
 			cursor.execute("INSERT INTO tblTokens (employee_id, token) VALUES (%s, %s)", [user_id, token])
 			cnx.commit()
 
@@ -123,11 +127,11 @@ class sqlAuth:
 				print("Token expired")
 				sqlAuth.delete_token(token)
 				return 1
-			
+
 			print("Token is Valid")
-			
+
 			return 2
-		
+
 		except sqlError as e:
 			print("Error checking token: ", e)
 			return e
@@ -147,7 +151,7 @@ class sqlAuth:
 
 			if cursor.rowcount == 0:
 				return ''
-			
+
 			token = cursor.fetchone()
 			return token[2]
 
@@ -172,7 +176,7 @@ class sqlAuth:
 		except sqlError as e:
 			print("Error updating token: ", e)
 			return False
-		
+
 		finally:
 			if cursor:
 				cursor.close()
@@ -188,17 +192,17 @@ class sqlAuth:
 			cnx = pool.get_connection()
 			cursor = cnx.cursor()
 			cursor.execute("SELECT * FROM tblEmployees WHERE email = %s AND password = %s", [email, password])
-			
+
 			if cursor.rowcount == 0:
 				return ''
-			
+
 			user = cursor.fetchone()
 			print("User found: ", user[3])
 
 			token = sqlAuth.__get_token(user[0])
 
 			token_exists = True if token != '' else False
-			
+
 			print("Token exists: ", token_exists)
 
 			if token_exists:
@@ -209,10 +213,33 @@ class sqlAuth:
 
 			token = sqlAuth.create_token(user[0])
 			return token
-			
+
 		except sqlError as e:
 			print("Error logging in: ", e)
-			return 
+			return
+
+		finally:
+			if cursor:
+				cursor.close()
+			if cnx:
+				cnx.close()
+
+
+	def check_access(token, access_level=["Manager"]) -> bool:
+		try:
+			cnx = pool.get_connection()
+			cursor = cnx.cursor()
+			cursor.execute("SELECT position FROM lnkEmployeeRegister WHERE employee_id = (SELECT employee_id FROM tblTokens WHERE token = %s)", [token])
+
+			position = cursor.fetchone()[0]
+
+			if position in access_level:
+				return True
+			else:
+				raise Exception("Access Denied")
+		except Exception as e:
+			print("Error checking access: ", e)
+			raise Exception(e)
 
 		finally:
 			if cursor:
@@ -304,7 +331,7 @@ class sqlBranch:
 
 	@check_auth
 	def delete(branch_id) -> bool:
-		
+
 		try:
 
 			cnx = pool.get_connection()
@@ -312,7 +339,7 @@ class sqlBranch:
 			cursor.execute("DELETE FROM tblBranches WHERE id = %s", [branch_id])
 			cnx.commit()
 			return True
-		
+
 		except sqlError as e:
 			print("Error deleting: ", e)
 			return False
@@ -447,7 +474,7 @@ class sqlEmployee:
 				cursor.close()
 			if cnx:
 				cnx.close()
-	
+
 	@check_auth
 	def get_all() -> list:
 		try:
@@ -500,7 +527,7 @@ class sqlEmployee:
 			cursor.execute("SELECT * FROM tblEmployees WHERE id = %s AND password = %s", [employee_id, old_password])
 			if cursor.rowcount == 0:
 				return False
-			
+
 			print("employee valid")
 			cursor.fetchall()
 
@@ -512,7 +539,7 @@ class sqlEmployee:
 
 			cnx.commit()
 			return True
-		
+
 		except sqlError as e:
 			print("Error updating: ", e)
 			return False
@@ -543,23 +570,23 @@ class sqlEmployee:
 				cnx.close()
 
 	class Register:
-		
+
 		@check_auth
 		def update(employee_id, branch_id, position) -> bool:
 			try:
 				cnx = pool.get_connection()
 				cursor = cnx.cursor()
-				
+
 				if branch_id != 0:
 					cursor.execute("UPDATE lnkEmployeeRegister SET branch_id = %s WHERE employee_id = %s", [branch_id, employee_id])
 					if cursor.rowcount == 0:
 						raise Exception("Branch does not exist")
-					
+
 				if position != "":
 					cursor.execute("UPDATE lnkEmployeeRegister SET position = %s WHERE employee_id = %s", [position, employee_id])
 					if cursor.rowcount == 0:
 						raise Exception("Position does not exist")
-					
+
 				cnx.commit()
 				return True
 			except sqlError as e:
@@ -574,6 +601,153 @@ class sqlEmployee:
 				if cnx:
 					cnx.close()
 
+class sqlEmployeeDiscounts:
+
+	@check_auth
+	def generate(employee_id) -> str:
+		try:
+			cnx = pool.get_connection()
+			cursor = cnx.cursor()
+
+
+			cursor.execute("SELECT code FROM tblEmployeeDiscounts WHERE employee_id = %s AND used = 0", [employee_id])
+			code = cursor.fetchall()
+			if cursor.rowcount == 0:
+				print("Creating new discount")
+				code = hashlib.sha256(str(random.getrandbits(256)).encode()).hexdigest()
+
+				cursor.execute("INSERT INTO tblEmployeeDiscounts (employee_id, code) VALUES (%s, %s)", [employee_id, code])
+
+				if cursor.rowcount == 0:
+					raise Exception("Discount could not be created")
+
+				cnx.commit()
+
+				return code
+
+			return code[0][0]
+
+
+
+		except sqlError as e:
+			print("Error creating discount: ", e)
+			raise Exception(e)
+		except Exception as e:
+			print("Error creating discount: ", e)
+			raise Exception(e)
+		finally:
+			if cursor:
+				cursor.close()
+			if cnx:
+				cnx.close()
+
+	@check_auth
+	def check(code) -> bool:
+		try:
+			cnx = pool.get_connection()
+			cursor = cnx.cursor()
+			cursor.execute("SELECT * FROM tblEmployeeDiscounts WHERE code = %s AND used = 0", [code])
+
+			if cursor.rowcount == 0:
+				return False
+
+
+			discount = cursor.fetchone()
+
+			cursor.execute("UPDATE tblEmployeeDiscounts SET used = 1 WHERE id = %s", [discount[0]])
+			cnx.commit()
+			return True
+		except sqlError as e:
+			print("Error checking discount: ", e)
+			raise Exception(e)
+		except Exception as e:
+			print("Error checking discount: ", e)
+			raise Exception(e)
+		finally:
+			if cursor:
+				cursor.close()
+			if cnx:
+				cnx.close()
+
+class sqlDiscounts:
+
+	@check_auth
+	def create(branch_id, tag, code, discount, end) -> bool:
+		try:
+			cnx = pool.get_connection()
+			cursor = cnx.cursor()
+			cursor.execute("INSERT INTO tblDiscounts (branch_id, tag, code, discount, end_date) VALUES (%s, %s, %s, %s, %s)", [branch_id, tag, code, discount, end])
+			cnx.commit()
+			return True
+		except sqlError as e:
+			print("Error creating discount: ", e)
+			if e.errno == 1062:
+				raise Exception("Discount already exists")
+			if e.errno == 1452:
+				raise Exception("Branch does not exist")
+
+		except Exception as e:
+			print("Error creating discount: ", e)
+			raise Exception(e)
+		finally:
+			if cursor:
+				cursor.close()
+			if cnx:
+				cnx.close()
+
+	@check_auth
+	def get_all() -> list:
+		try:
+			cnx = pool.get_connection()
+			cursor = cnx.cursor()
+			cursor.execute("SELECT * FROM tblDiscounts")
+			result = cursor.fetchall()
+
+			retlist = []
+			for res in result:
+				reslist = list(res)
+
+				reslist[5] = reslist[5].strftime("%Y-%m-%d")
+				retlist.append([reslist[0], reslist[1], reslist[2], reslist[3], reslist[4], reslist[5]])
+
+			return retlist
+		except sqlError as e:
+			print("Error getting discounts: ", e)
+			raise Exception(e)
+		except Exception as e:
+			print("Error getting discounts: ", e)
+			raise Exception(e)
+		finally:
+			if cursor:
+				cursor.close()
+			if cnx:
+				cnx.close()
+
+
+	@check_auth
+	def check(code) -> float:
+		try:
+			cnx = pool.get_connection()
+			cursor = cnx.cursor()
+
+			current_date = datetime.now().strftime("%Y-%m-%d")
+			cursor.execute("SELECT * FROM tblDiscounts WHERE code = %s AND end_date >= %s", [code, current_date])
+
+			result = cursor.fetchone()
+			if result == None:
+				raise Exception("Discount does not exist or has expired")
+
+			return result[4]
+
+		except Exception as e:
+			print("Error checking discount: ", e)
+			raise Exception(e)
+		finally:
+			if cursor:
+				cursor.close()
+			if cnx:
+				cnx.close()
+
 class sqlSisters:
 	@check_auth
 	def create(branch1, branch2, location) -> bool:
@@ -584,7 +758,7 @@ class sqlSisters:
 			cursor.execute("INSERT INTO tblBranches (name) VALUES (%s), (%s)", [branch1, branch2])
 
 			cursor.execute("INSERT INTO tblLocations (city) VALUES (%s)", [location])
-			
+
 
 			cursor.execute("SELECT LAST_INSERT_ID()")
 			if cursor.rowcount == 0:
@@ -611,53 +785,53 @@ class sqlSisters:
 
 			cnx = pool.get_connection()
 			cursor = cnx.cursor()
-			cursor.execute("""SELECT 
+			cursor.execute("""SELECT
 								ls.id,
 								b1.name AS branch1_name,
 								b2.name AS branch2_name,
 								l.city AS location_city
-							FROM 
+							FROM
 								lnkSisterBranches ls
-							JOIN 
+							JOIN
 								tblBranches b1 ON ls.branch_id_1 = b1.id
-							JOIN 
+							JOIN
 								tblBranches b2 ON ls.branch_id_2 = b2.id
-							JOIN 
+							JOIN
 								tblLocations l ON ls.location_id = l.id;
 				""")
-			
+
 			result = cursor.fetchall()
 
 			print(result)
 			return result
-		
+
 		except sqlError as e:
 			print("Error getting sisters: ", e)
 			return None
-		
+
 	@check_auth
 	def get(sister_id) -> dict:
 		try:
 
 			cnx = pool.get_connection()
 			cursor = cnx.cursor()
-			cursor.execute("""SELECT 
+			cursor.execute("""SELECT
 								ls.id,
 								b1.name AS branch1_name,
 								b2.name AS branch2_name,
 								l.city AS location_city
-							FROM 
+							FROM
 								lnkSisterBranches ls
-							JOIN 
+							JOIN
 								tblBranches b1 ON ls.branch_id_1 = b1.id
-							JOIN 
+							JOIN
 								tblBranches b2 ON ls.branch_id_2 = b2.id
-							JOIN 
+							JOIN
 								tblLocations l ON ls.location_id = l.id
 							WHERE
 				  			ls.id = %s;
 				""", [sister_id])
-			
+
 			if cursor.rowcount == 0:
 				raise Exception("Sister does not exist")
 
@@ -689,7 +863,7 @@ class sqlSisters:
 				cursor.execute("UPDATE lnkSisterBranches SET branch_id_1 = (SELECT id FROM tblBranches WHERE name = %s) WHERE id = %s", [branch1, sister_id])
 				if cursor.rowcount == 0:
 					raise Exception("Branch 1 does not exist")
-				
+
 
 			if branch2 != "":
 				print("updating branch 2")
@@ -705,7 +879,7 @@ class sqlSisters:
 
 			cnx.commit()
 			return True
-		
+
 		except sqlError as e:
 			print(e)
 			raise Exception(e)
@@ -713,13 +887,13 @@ class sqlSisters:
 		except Exception as e:
 			print("Error updating: ", e)
 			raise Exception(e)
-		
+
 		finally:
 			if cursor:
 				cursor.close()
 			if cnx:
 				cnx.close()
-		
+
 	@check_auth
 	def delete(sister_id) -> bool:
 
@@ -730,7 +904,7 @@ class sqlSisters:
 			cursor.execute("SELECT * FROM lnkSisterBranches WHERE id = %s", [sister_id])
 			if cursor.rowcount == 0:
 				raise Exception("Sister does not exist")
-			
+
 			sister = cursor.fetchone()
 
 			cursor.execute("DELETE FROM lnkSisterBranches WHERE id = %s", [sister_id])
@@ -740,7 +914,7 @@ class sqlSisters:
 			cursor.execute("DELETE FROM tblBranches WHERE id = (%s)", [sister[1]])
 			if cursor.rowcount == 0:
 				raise Exception("Branche could not be deleted")
-			
+
 			cursor.execute("DELETE FROM tblBranches WHERE id = (%s)", [sister[2]])
 			if cursor.rowcount == 0:
 				raise Exception("Branche could not be deleted")
@@ -772,23 +946,23 @@ class sqlSisters:
 		try:
 			cnx = pool.get_connection()
 			cursor = cnx.cursor()
-			cursor.execute("""SELECT 
+			cursor.execute("""SELECT
 								ls.id,
 								b1.name AS branch1_name,
 								b2.name AS branch2_name,
 								l.city AS location_city
-							FROM 
+							FROM
 								lnkSisterBranches ls
-							JOIN 
+							JOIN
 								tblBranches b1 ON ls.branch_id_1 = b1.id
-							JOIN 
+							JOIN
 								tblBranches b2 ON ls.branch_id_2 = b2.id
-							JOIN 
+							JOIN
 								tblLocations l ON ls.location_id = l.id
 							WHERE
 				  			b1.name = %s OR b2.name = %s OR l.city = %s;
 				""", [search, search, search])
-			
+
 			if cursor.rowcount == 0:
 				raise Exception("Sister does not exist")
 
@@ -818,7 +992,7 @@ class sqlStock:
 
 			if cursor.rowcount == 0:
 				raise Exception("Stock could not be created")
-			
+
 			cnx.commit()
 			return True
 		except sqlError as e:
@@ -826,6 +1000,66 @@ class sqlStock:
 			return Exception(e)
 		except Exception as e:
 			print("Error creating stock: ", e)
+			raise Exception(e)
+		finally:
+			if cursor:
+				cursor.close()
+			if cnx:
+				cnx.close()
+
+class sqlReservations:
+
+	@check_auth
+	def create(branch_id, cus_name, cus_number, size, requirements, datetime) -> bool:
+		try:
+			cnx = pool.get_connection()
+			cursor = cnx.cursor()
+			cursor.execute("INSERT INTO tblReservations (branch_id, cus_name, cus_number, size, requirements, datetime) VALUES (%s, %s, %s, %s, %s, %s)", [branch_id, cus_name, cus_number, size, requirements, datetime])
+			cnx.commit()
+			return True
+		except sqlError as e:
+			print("Error creating reservation: ", e)
+
+			if e.errno == 1452:
+				raise Exception("Branch does not exist")
+			
+			if e.errno == 1062:
+				raise Exception("Reservation already exists")
+
+			raise Exception(e)
+		except Exception as e:
+			print("Error creating reservation: ", e)
+			raise Exception(e)
+		finally:
+			if cursor:
+				cursor.close()
+			if cnx:
+				cnx.close()
+
+	@check_auth
+	def get_all(branch_id) -> list:
+		try:
+			cnx = pool.get_connection()
+			cursor = cnx.cursor()
+			cursor.execute("SELECT * FROM tblReservations WHERE branch_id = %s", [branch_id])
+			if cursor.rowcount == 0:
+				raise Exception("No reservations found")
+			result = cursor.fetchall()
+
+			retlist = []
+			for res in result:
+				reslist = list(res)
+				print(reslist)
+
+				reslist[6] = reslist[6].strftime("%Y-%m-%d %H:%M:%S")
+				retlist.append([reslist[0], reslist[1], reslist[2], reslist[3], reslist[4], reslist[5], reslist[6]])
+
+			return retlist
+		except sqlError as e:
+			print("Error getting reservations: ", e)
+			raise Exception(e)
+		except Exception as e:
+			print("Error getting reservations: ", e)
 			raise Exception(e)
 		finally:
 			if cursor:
