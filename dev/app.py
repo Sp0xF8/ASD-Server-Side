@@ -1,5 +1,5 @@
 from flask import Flask, request, jsonify, session
-from handlers.database import sqlBranch, sqlLocation, sqlEmployee, sqlAuth, sqlSisters, sqlEmployeeDiscounts, sqlDiscounts, sqlReservations
+from handlers.database import sqlBranch, sqlLocation, sqlEmployee, sqlAuth, sqlSisters, sqlEmployeeDiscounts, sqlDiscounts, sqlReservations, sqlStock, sqlInventory, sqlFood, sqlDrink
 
 from handlers.encryption import Encryption
 
@@ -524,14 +524,288 @@ def getReservations():
 		try:
 			data, token = decryptRecieved(request)
 
-			result = sqlReservations.get_all(data['branch_id'], token=token)
+			result = sqlReservations.get(data['branch_id'], token=token)
 			if result == None:
 				raise Exception("Could not retreive Reservations from database")
-			
+
 			return returnEncrypted(token, result, 200)
 		except Exception as e:
 			return returnEncrypted(token, {"error": str(e)}, 400)
-			
+
+@app.route('/api/v1/checkinReservation', methods=['POST'])
+def checkinReservation():
+	if request.method == 'POST':
+		try:
+			data, token = decryptRecieved(request)
+
+			if(not sqlReservations.checkin(data['reservation_id'], data['cus_number'], token=token)):
+				raise Exception("Could not verify Reservation")
+
+			return returnEncrypted(token, {"success": "Reservation verified"}, 200)
+		except Exception as e:
+			return returnEncrypted(token, {"error": str(e)}, 400)
+
+@app.route('/api/v1/updateReservation', methods=['POST'])
+def updateReservation():
+	if request.method == 'POST':
+		try:
+			data, token = decryptRecieved(request)
+
+			print(data)
+
+			if(not sqlReservations.update(data['reservation_id'], data['cus_name'], data['cus_number'], data['size'], data['requirements'], data['datetime'], token=token)):
+				raise Exception("Could not update Reservation")
+
+			return returnEncrypted(token, {"success": "Table Update Complete"}, 200)
+		except Exception as e:
+			return returnEncrypted(token, {"error": str(e)}, 400)
+
+###
+### 		STOCK API ROUTES
+###				C.R.U.D.
+
+@app.route('/api/v1/createStock', methods=['POST'])
+def createStock():
+	if request.method == 'POST':
+		try:
+			data, token = decryptRecieved(request)
+
+			if(not sqlStock.create(data['name'], data['max_stock'], data['price'], token=token)):
+				raise Exception("Could not create new Stock, likely duplicate entry")
+
+			return returnEncrypted(token, {"success": "Table Insertion Complete"}, 200)
+		except Exception as e:
+			return returnEncrypted(token, {"error": str(e)}, 400)
+
+
+@app.route('/api/v1/getStock', methods=['POST'])
+def getStock():
+	if request.method == 'POST':
+		try:
+			data, token = decryptRecieved(request)
+
+			result = sqlStock.get(data['stock_id'], token=token)
+			if result == None:
+				raise Exception("Could not retreive Stock from database")
+
+			return returnEncrypted(token, result, 200)
+		except Exception as e:
+			return returnEncrypted(token, {"error": str(e)}, 400)
+
+@app.route('/api/v1/getStocks', methods=['POST'])
+def getStocks():
+	if request.method == 'POST':
+		try:
+			data = request.get_json(force=True)
+
+			result = sqlStock.get_all(token=data['token'])
+			if result == None:
+				raise Exception("Could not retreive Stocks from database")
+
+			return returnEncrypted(data['token'], result, 200)
+		except Exception as e:
+			return returnEncrypted(data['token'], {"error": str(e)}, 400)
+
+@app.route('/api/v1/updateStock', methods=['POST'])
+def updateStock():
+	if request.method == 'POST':
+		try:
+			data, token = decryptRecieved(request)
+
+			if(not sqlStock.update(data['stock_id'], data['name'], data['max_stock'], data['price'], token=token)):
+				raise Exception("Could not update Stock")
+
+			return returnEncrypted(token, {"success": "Table Update Complete"}, 200)
+		except Exception as e:
+			return returnEncrypted(token, {"error": str(e)}, 400)
+
+@app.route('/api/v1/deleteStock', methods=['POST'])
+def deleteStock():
+	if request.method == 'POST':
+		try:
+			data, token = decryptRecieved(request)
+
+			if(not sqlStock.delete(data['stock_id'], token=token)):
+				raise Exception("Failed to delete Stock entry")
+
+			return returnEncrypted(token, {"success": "Entry deletion Complete"}, 200)
+		except Exception as e:
+			return returnEncrypted(token, {"error": str(e)}, 400)
+
+###
+### 		INVENTORY API ROUTES
+###				C.R.U.D. & Setup
+
+@app.route('/api/v1/setupInventory', methods=['POST'])
+def setupInventory():
+	if request.method == 'POST':
+		try:
+			data, token = decryptRecieved(request)
+
+			if(not sqlInventory.setup(data['branch_id'], token=token)):
+				raise Exception("Could not create new Stock, likely duplicate entry")
+
+			return returnEncrypted(token, {"success": "Table Insertions Complete"}, 200)
+		except Exception as e:
+			return returnEncrypted(token, {"error": str(e)}, 400)
+		
+@app.route('/api/v1/createInventory', methods=['POST'])
+def createInventory():
+	if request.method == 'POST':
+		try:
+			data, token = decryptRecieved(request)
+
+			if(not sqlInventory.create(data['stock_id'], data['branch_id'], data['current_stock'], token=token)):
+				raise Exception("Could not create new Inventory, likely duplicate entry")
+
+			return returnEncrypted(token, {"success": "Table Insertion Complete"}, 200)
+		except Exception as e:
+			return returnEncrypted(token, {"error": str(e)}, 400)
+		
+@app.route('/api/v1/getInventory', methods=['POST'])
+def getInventory():
+	if request.method == 'POST':
+		try:
+			data, token = decryptRecieved(request)
+
+			result = sqlInventory.get(data['branch_id'], data['stock_id'], token=token)
+			if result == None:
+				raise Exception("Could not retreive Inventory from database")
+
+			return returnEncrypted(token, result, 200)
+		except Exception as e:
+			return returnEncrypted(token, {"error": str(e)}, 400)
+
+@app.route('/api/v1/getInventoryLst', methods=['POST'])
+def getInventoryLst():
+	if request.method == 'POST':
+		try:
+			data, token = decryptRecieved(request)
+
+			result = sqlInventory.get_all(branch_id=data['branch_id'], token=token)
+			if result == None:
+				raise Exception("Could not retreive Inventory from database")
+
+			return returnEncrypted(token, result, 200)
+		except Exception as e:
+			return returnEncrypted(token, {"error": str(e)}, 400)
+		
+@app.route('/api/v1/updateInventory', methods=['POST'])
+def updateInventory():
+	if request.method == 'POST':
+		try:
+			data, token = decryptRecieved(request)
+
+			if(not sqlInventory.update(data['branch_id'], data['stock_id'], data['current_stock'], token=token)):
+				raise Exception("Could not update Inventory")
+
+			return returnEncrypted(token, {"success": "Table Update Complete"}, 200)
+		except Exception as e:
+			return returnEncrypted(token, {"error": str(e)}, 400)
+		
+@app.route('/api/v1/deleteInventory', methods=['POST'])
+def deleteInventory():
+	if request.method == 'POST':
+		try:
+			data, token = decryptRecieved(request)
+
+			if(not sqlInventory.delete(data['branch_id'], data['stock_id'], token=token)):
+				raise Exception("Failed to delete Inventory entry")
+
+			return returnEncrypted(token, {"success": "Entry deletion Complete"}, 200)
+		except Exception as e:
+			return returnEncrypted(token, {"error": str(e)}, 400)
+		
+@app.route('/api/v1/addInventory', methods=['POST'])
+def addInventory():
+	if request.method == 'POST':
+		try:
+			data, token = decryptRecieved(request)
+
+			if(not sqlInventory.add(data['branch_id'], data['stock_id'], data['addition'], token=token)):
+				raise Exception("Could not add to Inventory")
+
+			return returnEncrypted(token, {"success": "Inventory Update Complete"}, 200)
+		except Exception as e:
+			return returnEncrypted(token, {"error": str(e)}, 400)
+
+
+###
+### 		FOOD API ROUTES
+###				C.R.U.D.
+
+@app.route('/api/v1/createFood', methods=['POST'])
+def createFood():
+	if request.method == 'POST':
+		try:
+			data, token = decryptRecieved(request)
+
+			if(not sqlFood.create(data['category'], data['name'], data['description'], data['main'], data['type'], data['price'], data['ingredients'], token=token)):
+				raise Exception("Could not create new Food, likely duplicate entry")
+
+			return returnEncrypted(token, {"success": "Table Insertion Complete"}, 200)
+		except Exception as e:
+			return returnEncrypted(token, {"error": str(e)}, 400)
+		
+@app.route('/api/v1/getFoods', methods=['POST'])
+def getFoods():
+	if request.method == 'POST':
+		try:
+			data = request.get_json(force=True)
+
+			result = sqlFood.get_all(token=data['token'])
+			if result == None:
+				raise Exception("Could not retreive Foods from database")
+
+			return returnEncrypted(data['token'], result, 200)
+		except Exception as e:
+			return returnEncrypted(data['token'], {"error": str(e)}, 400)
+		
+@app.route('/api/v1/getFood', methods=['POST'])
+def getFood():
+	if request.method == 'POST':
+		try:
+			data, token = decryptRecieved(request)
+
+			food, ingredients = sqlFood.get(data['food_id'], token=token)
+			if food == None or ingredients == None:
+				raise Exception("Could not retreive Food from database")
+
+			return returnEncrypted(token, {"food": food, "ingredients": ingredients}, 200)
+		except Exception as e:
+			return returnEncrypted(token, {"error": str(e)}, 400)
+
+@app.route('/api/v1/updateFood', methods=['POST'])
+def updateFood():
+	if request.method == 'POST':
+		try:
+			data, token = decryptRecieved(request)
+
+			if(not sqlFood.update(data['food_id'], data['category'], data['name'], data['description'], data['main'], data['type'], data['price'], data['ingredients'], token=token)):
+				raise Exception("Could not update Food")
+
+			return returnEncrypted(token, {"success": "Table Update Complete"}, 200)
+		except Exception as e:
+			return returnEncrypted(token, {"error": str(e)}, 400)
+		
+@app.route('/api/v1/deleteFood', methods=['POST'])
+def deleteFood():
+	if request.method == 'POST':
+		try:
+			data, token = decryptRecieved(request)
+
+			if(not sqlFood.delete(data['food_id'], token=token)):
+				raise Exception("Failed to delete Food entry")
+
+			return returnEncrypted(token, {"success": "Entry deletion Complete"}, 200)
+		except Exception as e:
+			return returnEncrypted(token, {"error": str(e)}, 400)
+
+###
+### 		DRINK API ROUTES
+###				C.R.U.D.
+
+
 
 ###
 ### 		MAIN
