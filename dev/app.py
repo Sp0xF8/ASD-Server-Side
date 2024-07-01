@@ -1,5 +1,5 @@
 from flask import Flask, request, jsonify, session
-from handlers.database import sqlBranch, sqlLocation, sqlEmployee, sqlAuth, sqlSisters, sqlEmployeeDiscounts, sqlDiscounts, sqlReservations, sqlStock, sqlInventory, sqlFood, sqlDrink
+from handlers.database import sqlBranch, sqlLocation, sqlEmployee, sqlAuth, sqlSisters, sqlEmployeeDiscounts, sqlDiscounts, sqlReservations, sqlStock, sqlInventory, sqlFood, sqlDrink, sqlAllergins
 
 from handlers.encryption import Encryption
 
@@ -805,6 +805,143 @@ def deleteFood():
 ### 		DRINK API ROUTES
 ###				C.R.U.D.
 
+@app.route('/api/v1/createDrink', methods=['POST'])
+def createDrink():
+	if request.method == 'POST':
+		try:
+			data, token = decryptRecieved(request)
+
+			if(not sqlDrink.create(data['category'], data['name'], data['description'], data['id_req'], data['alc_perc'], data['prices'], data['ingredients'], token=token)):
+				raise Exception("Could not create new Drink, likely duplicate entry")
+			
+			return returnEncrypted(token, {"success": "Table Insertion Complete"}, 200)
+		except Exception as e:
+			return returnEncrypted(token, {"error": str(e)}, 400)
+		
+@app.route('/api/v1/getDrinks', methods=['POST'])
+def getDrinks():
+	if request.method == 'POST':
+		try:
+			data = request.get_json(force=True)
+
+			result = sqlDrink.get_all(token=data['token'])
+			if result == None:
+				raise Exception("Could not retreive Drinks from database")
+
+			return returnEncrypted(data['token'], result, 200)
+		except Exception as e:
+			return returnEncrypted(data['token'], {"error": str(e)}, 400)
+		
+@app.route('/api/v1/getDrink', methods=['POST'])
+def getDrink():
+	if request.method == 'POST':
+		try:
+			data, token = decryptRecieved(request)
+
+			drink, prices, ingredients = sqlDrink.get(data['drink_id'], token=token)
+			if drink == None or ingredients == None:
+				raise Exception("Could not retreive Drink from database")
+
+			return returnEncrypted(token, {"drink": drink, "prices":prices, "ingredients": ingredients}, 200)
+		except Exception as e:
+			return returnEncrypted(token, {"error": str(e)}, 400)
+		
+@app.route('/api/v1/updateDrink', methods=['POST'])
+def updateDrink():
+	if request.method == 'POST':
+		try:
+			data, token = decryptRecieved(request)
+
+			if(not sqlDrink.update(data['drink_id'], data['category'], data['name'], data['description'], data['id_req'], data['alc_perc'], data['prices'], data['ingredients'], token=token)):
+				raise Exception("Could not update Drink")
+
+			return returnEncrypted(token, {"success": "Table Update Complete"}, 200)
+		except Exception as e:
+			return returnEncrypted(token, {"error": str(e)}, 400)
+		
+@app.route('/api/v1/deleteDrink', methods=['POST'])
+def deleteDrink():
+	if request.method == 'POST':
+		try:
+			data, token = decryptRecieved(request)
+
+			if(not sqlDrink.delete(data['drink_id'], token=token)):
+				raise Exception("Failed to delete Drink entry")
+
+			return returnEncrypted(token, {"success": "Entry deletion Complete"}, 200)
+		except Exception as e:
+			return returnEncrypted(token, {"error": str(e)}, 400)
+		
+###
+### 		ALLERGINS API ROUTES
+###				C.R.U.D.
+
+@app.route('/api/v1/createAllergin', methods=['POST'])
+def createAllergin():
+	if request.method == 'POST':
+		try:
+			data, token = decryptRecieved(request)
+
+			if(not sqlAllergins.create(data['name'], token=token)):
+				raise Exception("Could not create new Allergin, likely duplicate entry")
+
+			return returnEncrypted(token, {"success": "Table Insertion Complete"}, 200)
+		except Exception as e:
+			return returnEncrypted(token, {"error": str(e)}, 400)
+
+@app.route('/api/v1/getAllergins', methods=['POST'])
+def getAllergins():
+	if request.method == 'POST':
+		try:
+			data = request.get_json(force=True)
+
+			result = sqlAllergins.get_all(token=data['token'])
+			if result == None:
+				raise Exception("Could not retreive Allergins from database")
+
+			return returnEncrypted(data['token'], result, 200)
+		except Exception as e:
+			return returnEncrypted(data['token'], {"error": str(e)}, 400)
+		
+@app.route('/api/v1/getAllergin', methods=['POST'])
+def getAllergin():
+	if request.method == 'POST':
+		try:
+			data, token = decryptRecieved(request)
+
+			result = sqlAllergins.get(data['allergin_id'], token=token)
+			if result == None:
+				raise Exception("Could not retreive Allergin from database")
+
+			return returnEncrypted(token, result, 200)
+		except Exception as e:
+			return returnEncrypted(token, {"error": str(e)}, 400)
+		
+@app.route('/api/v1/updateAllergin', methods=['POST'])
+def updateAllergin():
+	if request.method == 'POST':
+		try:
+			data, token = decryptRecieved(request)
+
+			if(not sqlAllergins.update(data['allergin_id'], data['name'], token=token)):
+				raise Exception("Could not update Allergin")
+
+			return returnEncrypted(token, {"success": "Table Update Complete"}, 200)
+		except Exception as e:
+			return returnEncrypted(token, {"error": str(e)}, 400)
+		
+@app.route('/api/v1/deleteAllergin', methods=['POST'])
+def deleteAllergin():
+	if request.method == 'POST':
+		try:
+			data, token = decryptRecieved(request)
+
+			if(not sqlAllergins.delete(data['allergin_id'], token=token)):
+				raise Exception("Failed to delete Allergin entry")
+
+			return returnEncrypted(token, {"success": "Entry deletion Complete"}, 200)
+		except Exception as e:
+			return returnEncrypted(token, {"error": str(e)}, 400)
 
 
 ###
@@ -812,8 +949,5 @@ def deleteFood():
 ###
 
 if __name__ == '__main__':
-
-
 	app.run(debug=True)
-
 	print("tuh")

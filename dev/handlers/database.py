@@ -1597,28 +1597,321 @@ class sqlFood:
 			if cnx:
 				cnx.close()
 
-
 class sqlDrink:
 
 	@check_auth
-	def create(category, name, description, half_price, full_price, req_id, alc_perc, shot_price) -> bool:
+	def create(category, name, description, req_id, alc_perc, prices, ingredients):
 		try:
 			cnx = pool.get_connection()
 			cursor = cnx.cursor()
-			cursor.execute("INSERT INTO tblDrinks (category, name, description, half_price, full_price, req_id, alc_perc, shot_price) VALUES (%s, %s, %s, %s, %s, %s, %s, %s)", [category, name, description, half_price, full_price, req_id, alc_perc, shot_price])
+			cursor.execute("INSERT INTO tblDrinks (category, name, description, req_id, alc_perc) VALUES (%s, %s, %s, %s, %s)", [category, name, description, req_id, alc_perc])
 
 			if cursor.rowcount == 0:
 				raise Exception("Drink could not be created")
+			
+			cursor.execute("SELECT LAST_INSERT_ID()")
+			drink_id = cursor.fetchone()[0]
+
+			for price in prices:
+				cursor.execute("INSERT INTO lnkDrinkPrices (drink_id, type, price) VALUES (%s, %s, %s)", [drink_id, price[0], price[1]])
+
+			for ingredient in ingredients:
+				cursor.execute("INSERT INTO lnkDrinkIngredients (drink_id, stock_id, count_req) VALUES (%s, %s, %s)", [drink_id, ingredient[0], ingredient[1]])
 
 			cnx.commit()
 			return True
 		except sqlError as e:
 			print("Error creating drink: ", e)
 			if e.errno == 1062:
+				cnx.rollback()
 				raise Exception("Drink already exists")
 			raise Exception(e)
 		except Exception as e:
 			print("Error creating drink: ", e)
+			raise Exception(e)
+		finally:
+			if cursor:
+				cursor.close()
+			if cnx:
+				cnx.close()
+
+
+	@check_auth
+	def get_all():
+		try:
+			cnx = pool.get_connection()
+			cursor = cnx.cursor()
+			cursor.execute("SELECT * FROM tblDrinks")
+			result = cursor.fetchall()
+
+			if cursor.rowcount == 0:
+				raise Exception("No drinks found")
+
+			return result
+		except sqlError as e:
+			print("Error getting drinks: ", e)
+			raise Exception(e)
+		except Exception as e:
+			print("Error getting drinks: ", e)
+			raise Exception(e)
+		finally:
+			if cursor:
+				cursor.close()
+			if cnx:
+				cnx.close()
+
+	@check_auth
+	def get(drink_id):
+		try:
+			cnx = pool.get_connection()
+			cursor = cnx.cursor()
+			cursor.execute("SELECT * FROM tblDrinks WHERE id = %s", [drink_id])
+			result = cursor.fetchone()
+
+			if result == None:
+				raise Exception("Drink does not exist")
+
+			cursor.execute("SELECT type, price FROM lnkDrinkPrices WHERE drink_id = %s", [drink_id])
+			prices = cursor.fetchall()
+
+			cursor.execute("SELECT s.id, s.name, i.count_req FROM lnkDrinkIngredients i JOIN tblStock s ON i.stock_id = s.id WHERE i.drink_id = %s", [drink_id])
+			ingredients = cursor.fetchall()
+
+			return result, prices, ingredients
+		except sqlError as e:
+			print("Error getting drink: ", e)
+			raise Exception(e)
+		except Exception as e:
+			print("Error getting drink: ", e)
+			raise Exception(e)
+		finally:
+			if cursor:
+				cursor.close()
+			if cnx:
+				cnx.close()
+
+	@check_auth
+	def update(drink_id, category, name, description, req_id, alc_perc, prices, ingredients):
+		try:
+			cnx = pool.get_connection()
+			cursor = cnx.cursor()
+
+			if category != '':
+				cursor.execute("UPDATE tblDrinks SET category = %s WHERE id = %s", [category, drink_id])
+				if cursor.rowcount == 0:
+					raise Exception("Drink not updated, possibly does not exist")
+
+			if name != '':
+				cursor.execute("UPDATE tblDrinks SET name = %s WHERE id = %s", [name, drink_id])
+				if cursor.rowcount == 0:
+					raise Exception("Drink not updated, possibly does not exist")
+
+			if description != '':
+				cursor.execute("UPDATE tblDrinks SET description = %s WHERE id = %s", [description, drink_id])
+				if cursor.rowcount == 0:
+					raise Exception("Drink not updated, possibly does not exist")
+
+			if req_id != '':
+				cursor.execute("UPDATE tblDrinks SET req_id = %s WHERE id = %s", [req_id, drink_id])
+				if cursor.rowcount == 0:
+					raise Exception("Drink not updated, possibly does not exist")
+
+			if alc_perc != 0.0:
+				cursor.execute("UPDATE tblDrinks SET alc_perc = %s WHERE id = %s", [alc_perc, drink_id])
+				if cursor.rowcount == 0:
+					raise Exception("Drink not updated, possibly does not exist")
+
+			if prices != []:
+				cursor.execute("SELECT type FROM lnkDrinkPrices WHERE drink_id = %s", [drink_id])
+				old_prices = cursor.fetchall()
+
+				for price in prices:
+					should_keep = False
+					unseen = True
+					delete_id = None
+					for old_price in old_prices:
+						if price[0] == old_price[0]:
+							should_keep = True
+							unseen = False
+							delete_id = old_prices.index(old_price)
+							cursor.execute("UPDATE lnkDrinkPrices SET price = %s WHERE drink_id = %s AND type = %s", [price[1], drink_id, price[0]])
+							break
+					if should_keep:
+						old_prices.remove(old_prices[delete_id])
+
+					if unseen:
+						cursor.execute("INSERT INTO lnkDrinkPrices (drink_id, type, price) VALUES (%s, %s, %s)", [drink_id, price[0], price[1]])
+
+				for price in old_prices:
+					cursor.execute("DELETE FROM lnkDrinkPrices WHERE drink_id = %s AND type = %s", [drink_id, price[0]])
+
+			if ingredients != []:
+				cursor.execute("SELECT stock_id FROM lnkDrinkIngredients WHERE drink_id = %s", [drink_id])
+				old_ingredients = cursor.fetchall()
+
+				for ingredient in ingredients:
+					should_keep = False
+					unseen = True
+					delete_id = None
+					for old_ingredient in old_ingredients:
+						if ingredient[0] == old_ingredient[0]:
+							should_keep = True
+							unseen = False
+							delete_id = old_ingredients.index(old_ingredient)
+							cursor.execute("UPDATE lnkDrinkIngredients SET count_req = %s WHERE drink_id = %s AND stock_id = %s", [ingredient[1], drink_id, ingredient[0]])
+							break
+					if should_keep:
+						old_ingredients.remove(old_ingredients[delete_id])
+
+					if unseen:
+						cursor.execute("INSERT INTO lnkDrinkIngredients (drink_id, stock_id, count_req) VALUES (%s, %s, %s)", [drink_id, ingredient[0], ingredient[1]])
+
+				for ingredient in old_ingredients:
+					cursor.execute("DELETE FROM lnkDrinkIngredients WHERE drink_id = %s AND stock_id = %s", [drink_id, ingredient[0]])
+
+			cnx.commit()
+			return True
+		except sqlError as e:
+			print("Error updating drink: ", e)
+
+			if e.errno == 1452:
+				raise Exception("Drink does not exist")
+			
+			if e.errno == 1062:
+				raise Exception("Drink already exists")
+
+			raise Exception(e)
+		
+		except Exception as e:
+			print("Error updating drink: ", e)
+			raise Exception(e)
+		
+
+	@check_auth
+	def delete(drink_id):
+		try:
+			cnx = pool.get_connection()
+			cursor = cnx.cursor()
+			cursor.execute("DELETE FROM tblDrinks WHERE id = %s", [drink_id])
+			cnx.commit()
+			return True
+		except sqlError as e:
+			if e.errno == 1452:
+				raise Exception("Drink does not exist")
+			raise Exception(e)
+		except Exception as e:
+			print("Error deleting drink: ", e)
+			raise Exception(e)
+		finally:
+			if cursor:
+				cursor.close()
+			if cnx:
+				cnx.close()
+
+class sqlAllergins:
+
+	@check_auth
+	def create(name) -> bool:
+		try:
+			cnx = pool.get_connection()
+			cursor = cnx.cursor()
+			cursor.execute("INSERT INTO tblAllergins (allergin) VALUES (%s)", [name])
+			cnx.commit()
+			return True
+		except sqlError as e:
+			print("Error creating allergin: ", e)
+			if e.errno == 1062:
+				raise Exception("Allergin already exists")
+			raise Exception(e)
+		except Exception as e:
+			print("Error creating allergin: ", e)
+			raise Exception(e)
+		finally:
+			if cursor:
+				cursor.close()
+			if cnx:
+				cnx.close()
+
+	@check_auth
+	def get_all() -> list:
+		try:
+			cnx = pool.get_connection()
+			cursor = cnx.cursor()
+			cursor.execute("SELECT * FROM tblAllergins")
+			result = cursor.fetchall()
+			return result
+		except sqlError as e:
+			print("Error getting allergins: ", e)
+			raise Exception(e)
+		except Exception as e:
+			print("Error getting allergins: ", e)
+			raise Exception(e)
+		finally:
+			if cursor:
+				cursor.close()
+			if cnx:
+				cnx.close()
+
+	@check_auth
+	def get(allergin_id) -> dict:
+		try:
+			cnx = pool.get_connection()
+			cursor = cnx.cursor()
+			cursor.execute("SELECT * FROM tblAllergins WHERE id = %s", [allergin_id])
+			result = cursor.fetchone()
+			if result == None:
+				raise Exception("Allergin does not exist")
+
+			return result
+		except sqlError as e:
+			print("Error getting allergin: ", e)
+			raise Exception(e)
+		except Exception as e:
+			print("Error getting allergin: ", e)
+			raise Exception(e)
+		finally:
+			if cursor:
+				cursor.close()
+			if cnx:
+				cnx.close()
+
+	@check_auth
+	def update(allergin_id, name) -> bool:
+		try:
+			cnx = pool.get_connection()
+			cursor = cnx.cursor()
+			cursor.execute("UPDATE tblAllergins SET allergin = %s WHERE id = %s", [name, allergin_id])
+			if cursor.rowcount == 0:
+				raise Exception("Allergin does not exist")
+
+			cnx.commit()
+			return True
+		except sqlError as e:
+			print("Error updating allergin: ", e)
+			raise Exception(e)
+		except Exception as e:
+			print("Error updating allergin: ", e)
+			raise Exception(e)
+		finally:
+			if cursor:
+				cursor.close()
+			if cnx:
+				cnx.close()
+
+	@check_auth
+	def delete(allergin_id) -> bool:
+		try:
+			cnx = pool.get_connection()
+			cursor = cnx.cursor()
+			cursor.execute("DELETE FROM tblAllergins WHERE id = %s", [allergin_id])
+			cnx.commit()
+			return True
+		except sqlError as e:
+			if e.errno == 1452:
+				raise Exception("Allergin does not exist")
+			raise Exception(e)
+		except Exception as e:
+			print("Error deleting allergin: ", e)
 			raise Exception(e)
 		finally:
 			if cursor:
