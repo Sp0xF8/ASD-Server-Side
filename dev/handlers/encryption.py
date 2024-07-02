@@ -38,16 +38,24 @@ class Encryption:
 			return None
 		
 
-	def load_public_key(self, token):
+	def load_public_key(self, token, keypath="../keys/"):
 		try:
-			with open(os.path.join(script_dir, "../keys/", token + ".pem"), "rb") as key_file:
+			
+			fullkeypath = os.path.join(script_dir, keypath, token + ".pem")
+
+			with open(fullkeypath, "rb") as key_file:
 				public_key = serialization.load_pem_public_key(
 					key_file.read(),
 					backend=default_backend()
 				)
 
-			self.public_keys[token] = public_key
-			return True
+			os.remove(fullkeypath)
+
+			if keypath == "../keys/":
+				self.public_keys[token] = public_key
+				return True
+			else:
+				return public_key
 		except Exception as e:
 			print(f"An error occurred while loading the public key: {e}")
 			return None
@@ -100,6 +108,32 @@ class Encryption:
 				message = self.__toString({"data": dick})
 
 			encMessage = self.public_keys[token].encrypt(
+				message.encode(),
+				padding.OAEP(
+					mgf=padding.MGF1(algorithm=hashes.SHA256()),
+					algorithm=hashes.SHA256(),
+					label=None,
+				)
+			)
+
+
+			return  {"transfer": encMessage.decode('latin1')}
+		except Exception as e:
+			print(f"An error occurred while encrypting the message: {e}")
+			return None
+		
+	def hsencrypt(self, token, dick):
+		try:
+			
+			enigma = self.load_public_key(token, "../keys/hs/")
+				
+				
+			if isinstance(dick, dict):
+				message = self.__toString(dick)
+			else:
+				message = self.__toString({"data": dick})
+
+			encMessage = enigma.encrypt(
 				message.encode(),
 				padding.OAEP(
 					mgf=padding.MGF1(algorithm=hashes.SHA256()),
