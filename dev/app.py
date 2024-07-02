@@ -570,7 +570,7 @@ def createStock():
 		try:
 			data, token = decryptRecieved(request)
 
-			if(not sqlStock.create(data['name'], data['max_stock'], data['price'], token=token)):
+			if(not sqlStock.create(data['name'], data['max_stock'], data['price'], data['allergins'], token=token)):
 				raise Exception("Could not create new Stock, likely duplicate entry")
 
 			return returnEncrypted(token, {"success": "Table Insertion Complete"}, 200)
@@ -584,11 +584,11 @@ def getStock():
 		try:
 			data, token = decryptRecieved(request)
 
-			result = sqlStock.get(data['stock_id'], token=token)
-			if result == None:
+			stock, allergins = sqlStock.get(data['stock_id'], token=token)
+			if stock == None or allergins == None:
 				raise Exception("Could not retreive Stock from database")
 
-			return returnEncrypted(token, result, 200)
+			return returnEncrypted(token, {"stock":stock, "allergins":allergins}, 200)
 		except Exception as e:
 			return returnEncrypted(token, {"error": str(e)}, 400)
 
@@ -612,7 +612,7 @@ def updateStock():
 		try:
 			data, token = decryptRecieved(request)
 
-			if(not sqlStock.update(data['stock_id'], data['name'], data['max_stock'], data['price'], token=token)):
+			if(not sqlStock.update(data['stock_id'], data['name'], data['max_stock'], data['price'], data['allergins'], token=token)):
 				raise Exception("Could not update Stock")
 
 			return returnEncrypted(token, {"success": "Table Update Complete"}, 200)

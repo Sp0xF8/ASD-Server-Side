@@ -1120,7 +1120,7 @@ class sqlReservations:
 class sqlStock:
 
 	@check_auth
-	def create(name, max, price) -> bool:
+	def create(name, max, price, allergins) -> bool:
 		try:
 
 			cnx = pool.get_connection()
@@ -1129,6 +1129,17 @@ class sqlStock:
 
 			if cursor.rowcount == 0:
 				raise Exception("Stock could not be created")
+			
+			if allergins == []:
+				cnx.commit()
+				return True
+			
+			cursor.execute("SELECT LAST_INSERT_ID()")
+
+			stock_id = cursor.fetchone()[0]
+
+			for allergin in allergins:
+				cursor.execute("INSERT INTO lnkStockAllergins (stock_id, allergin_id) VALUES (%s, %s)", [stock_id, allergin])
 
 			cnx.commit()
 			return True
@@ -1172,11 +1183,17 @@ class sqlStock:
 			cnx = pool.get_connection()
 			cursor = cnx.cursor()
 			cursor.execute("SELECT * FROM tblStock WHERE id = %s", [stock_id])
-			result = cursor.fetchone()
-			if result == None:
+			stock = cursor.fetchone()
+			if stock == None:
 				raise Exception("Stock does not exist")
+			
+			cursor.execute("SELECT a.id, a.allergin FROM lnkStockAllergins sa JOIN tblAllergins a ON sa.allergin_id = a.id WHERE sa.stock_id = %s ", [stock_id])
+			allergins = cursor.fetchall()
 
-			return result
+			if allergins == None:
+				allergins = []
+
+			return stock, allergins
 		except sqlError as e:
 			print("Error getting stock: ", e)
 			raise Exception(e)
@@ -1190,7 +1207,7 @@ class sqlStock:
 				cnx.close()
 
 	@check_auth
-	def update(stock_id, name, max, price) -> bool:
+	def update(stock_id, name, max, price, allergins) -> bool:
 		try:
 			cnx = pool.get_connection()
 			cursor = cnx.cursor()
@@ -1211,6 +1228,21 @@ class sqlStock:
 				print("Updated price")
 				if cursor.rowcount == 0:
 					raise Exception("Stock not updated, possibly does not exist")
+				
+
+			if allergins != []:
+				cursor.execute("SELECT allergin_id FROM lnkStockAllergins WHERE stock_id = %s", [stock_id])
+				old_allergins = cursor.fetchall()
+
+				for allergin in allergins:
+					if allergin not in old_allergins:
+						print("Adding allergin: ", allergin)
+						cursor.execute("INSERT INTO lnkStockAllergins (stock_id, allergin_id) VALUES (%s, %s)", [stock_id, allergin])
+
+				for allergin in old_allergins:
+					if allergin not in allergins:
+						print("Deleting allergin: ", allergin)
+						cursor.execute("DELETE FROM lnkStockAllergins WHERE stock_id = %s AND allergin_id = %s", [stock_id, allergin])
 
 
 			cnx.commit()
@@ -1635,7 +1667,6 @@ class sqlDrink:
 			if cnx:
 				cnx.close()
 
-
 	@check_auth
 	def get_all():
 		try:
@@ -1918,3 +1949,5 @@ class sqlAllergins:
 				cursor.close()
 			if cnx:
 				cnx.close()
+
+	
