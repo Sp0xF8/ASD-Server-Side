@@ -2007,18 +2007,53 @@ class sqlOrders:
 		try:
 			cnx = pool.get_connection()
 			cursor = cnx.cursor()
-			cursor.execute("SELECT * FROM tblOrders WHERE branch_id = %s", [branch_id])
-			result = cursor.fetchall()
+			cursor.execute("""
+				SELECT 
+					o.id AS order_id,
+					o.created_at AS order_created_at,
+					td.name AS drink_name,
+					ds.quantity AS drink_quantity,
+					tf.name AS food_name,
+					fs.quantity AS food_quantity
+				FROM 
+					tblOrders o
+				LEFT JOIN 
+					lnkDrinkSales ds ON o.id = ds.order_id
+				LEFT JOIN 
+					tblDrinks td ON ds.item_id = td.id
+				LEFT JOIN 
+					lnkFoodSales fs ON o.id = fs.order_id
+				LEFT JOIN 
+					tblFoods tf ON fs.item_id = tf.id
+				WHERE 
+					o.branch_id = %s
+				""", [branch_id])
 
+			results = cursor.fetchall()
 			if cursor.rowcount == 0:
 				raise Exception("No orders found")
+
+			returned_orders = {}
+			for order_id, order_created_at, drink_name, drink_quantity, food_name, food_quantity in results:
+				if order_id in returned_orders:
+					returned_orders[order_id][2].add((drink_name, drink_quantity))
+					returned_orders[order_id][3].add((food_name, food_quantity))
+				else:
+					returned_orders[order_id] = [
+						order_id,
+						order_created_at,
+						{(drink_name, drink_quantity)},
+						{(food_name, food_quantity)}
+					]
 			
 			retlist = []
-			for order in result:
-				reslist = list(order)
+			for order in returned_orders:
+				order = returned_orders[order]
 
-				reslist[2] = reslist[2].strftime("%Y-%m-%d %H:%M:%S")
-				retlist.append(reslist)
+				order[1] = order[1].strftime("%Y-%m-%d %H:%M:%S")
+				order[2] = list(order[2])
+				order[3] = list(order[3])
+				retlist.append(order)
 
 			return retlist
 		except sqlError as e:
@@ -2032,6 +2067,7 @@ class sqlOrders:
 				cursor.close()
 			if cnx:
 				cnx.close()
+
 
 	@check_auth
 	def get(order_id) -> dict:
