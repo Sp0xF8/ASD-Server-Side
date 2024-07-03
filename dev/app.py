@@ -1,5 +1,5 @@
 from flask import Flask, request, jsonify, render_template_string
-from handlers.database import sqlBranch, sqlLocation, sqlEmployee, sqlAuth, sqlSisters, sqlEmployeeDiscounts, sqlDiscounts, sqlReservations, sqlStock, sqlInventory, sqlFood, sqlDrink, sqlAllergins, sqlOrders
+from handlers.database import sqlBranch, sqlLocation, sqlEmployee, sqlAuth, sqlSisters, sqlEmployeeDiscounts, sqlDiscounts, sqlReservations, sqlStock, sqlInventory, sqlFood, sqlDrink, sqlAllergins, sqlOrders, sqlMenu
 import logging
 from collections import deque
 from handlers.encryption import Encryption
@@ -1052,6 +1052,21 @@ def updateOrder():
 				raise Exception("Could not update Order")
 
 			return returnEncrypted(token, {"success": "Table Update Complete"}, 200)
+		except Exception as e:
+			return returnEncrypted(token, {"error": str(e)}, 400)
+		
+
+@app.route('/api/v1/getMenu', methods=['POST'])
+def getMenu():
+	if request.method == 'POST':
+		try:
+			data, token = decryptRecieved(request)
+
+			result = sqlMenu.get(data['branch_id'], data['category'], token=token)
+			if result == None:
+				raise Exception("Could not retreive Menu from database")
+
+			return returnEncrypted(token, result, 200)
 		except Exception as e:
 			return returnEncrypted(token, {"error": str(e)}, 400)
 

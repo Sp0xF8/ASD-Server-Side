@@ -2225,3 +2225,42 @@ class sqlOrders:
 				cursor.close()
 			if cnx:
 				cnx.close()
+
+
+class sqlMenu:
+
+	@check_auth
+	def get(branch_id, category)-> list:
+
+		try:
+			cnx = pool.get_connection()
+			cursor = cnx.cursor()
+			
+			drink = True if category == "Cocktail" or category == "Beers" or category == "Wines" or category == "Shots" or category == "Liqours" or category == "Soft" else False
+			print("Category: ", category)
+			print("Drink: ", drink)
+
+			result = None
+
+			if drink:
+				cursor.execute("SELECT d.id AS item_id, d.name as item_name, d.description AS item_description, d.req_id AS require_id, d.alc_perc AS alcohol_percentage FROM tblDrinks d JOIN lnkDrinkIngredients di ON d.id = di.drink_id JOIN tblStock s ON di.stock_id = s.id JOIN lnkInventory i ON di.stock_id = i.stock_id WHERE category = %s AND i.branch_id = %s AND i.current_stock < (s.max_stock * 0.95)", [category, branch_id ])
+				result = cursor.fetchall()
+			# else:
+			# 	cursor.execute("SELECT * FROM tblFoods WHERE category = %s", [category])
+			# 	result = cursor.fetchall()
+
+			if result == None:
+				raise Exception("No items found")
+				
+			return result
+		except sqlError as e:
+			print("Error getting menu: ", e)
+			raise Exception(e)
+		except Exception as e:
+			print("Error getting menu: ", e)
+			raise Exception(e)
+		finally:
+			if cursor:
+				cursor.close()
+			if cnx:
+				cnx.close()
