@@ -1089,6 +1089,33 @@ def checkManagerDiscount():
 		except Exception as e:
 			return returnEncrypted(token, {"error": str(e)}, 400)
 
+@app.route('/api/v1/getManagerDiscount', methods=['POST'])
+def getManagerDiscount():
+	if request.method == 'POST':
+		try:
+			data, token = decryptRecieved(request)
+
+			result = sqlManger.get(data['branch_id'], token=token)
+			if result == None:
+				raise Exception("Could not retreive Discounts from database")
+
+			return returnEncrypted(token, result, 200)
+		except Exception as e:
+			return returnEncrypted(token, {"error": str(e)}, 400)
+		
+
+@app.route('/api/v1/updateManagerDiscount', methods=['POST'])
+def updateManagerDiscount():
+	if request.method == 'POST':
+		try:
+			data = request.get_json(force=True)
+
+			if(not sqlManger.update(token=data['token'])):
+				raise Exception("Could not update Discount")
+
+			return returnEncrypted(data['token'], {"success": "Table Update Complete"}, 200)
+		except Exception as e:
+			return returnEncrypted(data['token'], {"error": str(e)}, 400)
 
 ###
 ### 		MAIN

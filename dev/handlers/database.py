@@ -3,6 +3,7 @@ import os
 from mysql.connector import Error as sqlError
 from mysql.connector import pooling
 from dotenv import load_dotenv
+import string
 
 ##import random for generating random numbers
 import random
@@ -2423,3 +2424,53 @@ class sqlManger:
 				cursor.close()
 			if cnx:
 				cnx.close()
+
+	@check_auth
+	def get(branch_id):
+		try:
+			cnx = pool.get_connection()
+			cursor = cnx.cursor()
+			cursor.execute("SELECT access_code FROM tblBranches WHERE id = %s", [branch_id])
+			result = cursor.fetchone()
+			if result == None:
+				raise Exception("Branch does not exist")
+
+			return result
+		except sqlError as e:
+			print("Error getting manager: ", e)
+			raise Exception(e)
+		except Exception as e:
+			print("Error getting manager: ", e)
+			raise Exception(e)
+		finally:
+			if cursor:
+				cursor.close()
+			if cnx:
+				cnx.close()
+
+
+	@check_auth
+	def update():
+		try:
+			cnx = pool.get_connection()
+			cursor = cnx.cursor()
+			cursor.execute("SELECT id FROM tblBranches")
+			result = cursor.fetchall()
+			if result == []:
+				raise Exception("Branches could not be retreived")
+			
+			for branch in result:
+
+				## create random 6 digit access code
+				access_code = ''.join(random.choices(string.digits, k=6))
+				cursor.execute("UPDATE tblBranches SET access_code = %s WHERE id = %s", [access_code, branch[0]])
+
+			cnx.commit()
+
+			return True
+		except sqlError as e:
+			print("Error updating manager: ", e)
+			raise Exception(e)
+		except Exception as e:
+			print("Error updating manager: ", e)
+			raise Exception(e)
