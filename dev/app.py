@@ -1,13 +1,66 @@
-from flask import Flask, request, jsonify, session
-from handlers.database import sqlBranch, sqlLocation, sqlEmployee, sqlAuth, sqlSisters, sqlEmployeeDiscounts, sqlDiscounts, sqlReservations, sqlStock, sqlInventory, sqlFood, sqlDrink, sqlAllergins
-
+from flask import Flask, request, jsonify, render_template_string
+from handlers.database import sqlBranch, sqlLocation, sqlEmployee, sqlAuth, sqlSisters, sqlEmployeeDiscounts, sqlDiscounts, sqlReservations, sqlStock, sqlInventory, sqlFood, sqlDrink, sqlAllergins, sqlOrders, sqlMenu, sqlManger
+import logging
+from collections import deque
 from handlers.encryption import Encryption
+import sys
 
 app = Flask(__name__)
 
 encryption = Encryption()
 
+print("Server started")
 
+log_messages = deque(maxlen=50)
+
+# Custom logging handler to store messages in the in-memory deque
+class MemoryHandler(logging.Handler):
+	def emit(self, record):
+		log_messages.append(self.format(record))
+
+# Set up logging
+memory_handler = MemoryHandler()
+memory_formatter = logging.Formatter('%(asctime)s - %(message)s')
+memory_handler.setFormatter(memory_formatter)
+app.logger.addHandler(memory_handler)
+app.logger.setLevel(logging.DEBUG)
+
+# Stream handler to print to console
+console_handler = logging.StreamHandler(sys.stdout)
+app.logger.addHandler(console_handler)
+
+# Redirect stdout and stderr to logging
+class StreamToLogger:
+	def __init__(self, logger, log_level=logging.INFO):
+		self.logger = logger
+		self.log_level = log_level
+
+	def write(self, message):
+		if message.strip():  # Ignore empty messages
+			self.logger.log(self.log_level, message.strip())
+
+	def flush(self):
+		pass
+
+stdout_logger = logging.getLogger('STDOUT')
+stdout_logger.addHandler(memory_handler)
+stdout_logger.addHandler(console_handler)
+stdout_logger.setLevel(logging.INFO)
+
+stderr_logger = logging.getLogger('STDERR')
+stderr_logger.addHandler(memory_handler)
+stderr_logger.addHandler(console_handler)
+stderr_logger.setLevel(logging.ERROR)
+
+sys.stdout = StreamToLogger(stdout_logger, logging.INFO)
+sys.stderr = StreamToLogger(stderr_logger, logging.ERROR)
+
+
+print("Logging setup complete")
+
+@app.route('/logs')
+def logs():
+	return render_template_string('<pre>{{ logs }}</pre>', logs='\n'.join(log_messages))
 
 def decryptRecieved(request):
 	data = request.get_json(force=True)
@@ -28,6 +81,7 @@ def errorCallback(err):
 
 @app.route('/')
 def home():
+	app.logger.info('Home page accessed')
 	return 'fuck off hamayon <3'
 
 
@@ -67,17 +121,20 @@ def login():
 		try:
 			data, tag = decryptRecieved(request)
 
-			token = sqlAuth.login(data['email'], data['password'])
+			token, role = sqlAuth.login(data['email'], data['password'])
+			print("point4")
+			print("")
 
-			encrypted_message = encryption.hsencrypt(tag, {"token": token})
 
-
-			if(token == ''):
-				return jsonify({"failure": "Failed to login"}), 400
-
+			if token == '' or role == '':
+				encrypted_message = encryption.hsencrypt(tag, {"error": "Invalid login credentials"})
+				return jsonify({"transfer":encrypted_message}), 400
+			
+			encrypted_message = encryption.hsencrypt(tag, {"token": token, "role": role})
 			return jsonify({"success": "Login complete", "transfer": encrypted_message}), 200
 
 		except Exception as e:
+			print(e)
 			return jsonify({"error": str(e)}), 400
 
 @app.route('/api/v1/logout', methods=['POST'])
@@ -244,9 +301,6 @@ def deleteLocation():
 ###
 ### 		EMPLOYEE API ROUTES
 ###				C.R.U.D.
-
-
-#### doesnt work - fix encryption
 
 @app.route('/api/v1/createEmployee', methods=['POST'])
 def createEmployee():
@@ -943,6 +997,125 @@ def deleteAllergin():
 		except Exception as e:
 			return returnEncrypted(token, {"error": str(e)}, 400)
 
+###
+### 		ORDERS API ROUTES
+###				C.R.U.D. & Find
+
+@app.route('/api/v1/createOrder', methods=['POST'])
+def createOrder():
+	if request.method == 'POST':
+		try:
+			data, token = decryptRecieved(request)
+
+			if(not sqlOrders.create(data['branch_id'], data['discount'], data['drinks'], data['food'], token=token)):
+				raise Exception("Could not create new Order, likely duplicate entry")
+
+			return returnEncrypted(token, {"success": "Table Insertion Complete"}, 200)
+		except Exception as e:
+			return returnEncrypted(token, {"error": str(e)}, 400)
+		
+@app.route('/api/v1/getOrders', methods=['POST'])
+def getOrders():
+	if request.method == 'POST':
+		try:
+			data, token = decryptRecieved(request)
+
+			result = sqlOrders.get_all(data['branch_id'], token=token)
+			if result == None:
+				raise Exception("Could not retreive Orders from database")
+			
+			return returnEncrypted(token, result, 200)
+		except Exception as e:
+			return returnEncrypted(token, {"error": str(e)}, 400)
+
+@app.route('/api/v1/getOrder', methods=['POST'])
+def getOrder():
+	if request.method == 'POST':
+		try:
+			data, token = decryptRecieved(request)
+
+			result = sqlOrders.get(data['order_id'], token=token)
+			if result == None:
+				raise Exception("Could not retreive Order from database")
+
+			return returnEncrypted(token, result, 200)
+		except Exception as e:
+			return returnEncrypted(token, {"error": str(e)}, 400)
+		
+@app.route('/api/v1/updateOrder', methods=['POST'])
+def updateOrder():
+	if request.method == 'POST':
+		try:
+			data, token = decryptRecieved(request)
+
+			if(not sqlOrders.update(data['order_id'], data['drinks'], data['food'], token=token)):
+				raise Exception("Could not update Order")
+
+			return returnEncrypted(token, {"success": "Table Update Complete"}, 200)
+		except Exception as e:
+			return returnEncrypted(token, {"error": str(e)}, 400)
+		
+
+@app.route('/api/v1/getMenu', methods=['POST'])
+def getMenu():
+	if request.method == 'POST':
+		try:
+			data, token = decryptRecieved(request)
+
+			result = sqlMenu.get(data['branch_id'], data['category'], token=token)
+			if result == None:
+				raise Exception("Could not retreive Menu from database")
+
+			return returnEncrypted(token, result, 200)
+		except Exception as e:
+			return returnEncrypted(token, {"error": str(e)}, 400)
+
+
+###
+### 		Manager Discount API ROUTES
+###				C.R.U.D.
+
+@app.route('/api/v1/checkManagerDiscount', methods=['POST'])
+def checkManagerDiscount():
+	if request.method == 'POST':
+		try:
+			data, token = decryptRecieved(request)
+
+			if( not sqlManger.discount(data['branch_id'], data['code'], token=token)):
+				raise Exception("Discount code invalid or expired")
+			
+
+			return returnEncrypted(token, {"success": "Discount Code Accepted"}, 200)
+		except Exception as e:
+			return returnEncrypted(token, {"error": str(e)}, 400)
+
+@app.route('/api/v1/getManagerDiscount', methods=['POST'])
+def getManagerDiscount():
+	if request.method == 'POST':
+		try:
+			data, token = decryptRecieved(request)
+
+			result = sqlManger.get(data['branch_id'], token=token)
+			if result == None:
+				raise Exception("Could not retreive Discounts from database")
+
+			return returnEncrypted(token, result, 200)
+		except Exception as e:
+			return returnEncrypted(token, {"error": str(e)}, 400)
+		
+
+@app.route('/api/v1/updateManagerDiscount', methods=['POST'])
+def updateManagerDiscount():
+	if request.method == 'POST':
+		try:
+			data = request.get_json(force=True)
+
+			if(not sqlManger.update(token=data['token'])):
+				raise Exception("Could not update Discount")
+
+			return returnEncrypted(data['token'], {"success": "Table Update Complete"}, 200)
+		except Exception as e:
+			return returnEncrypted(data['token'], {"error": str(e)}, 400)
 
 ###
 ### 		MAIN

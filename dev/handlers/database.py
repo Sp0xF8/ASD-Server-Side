@@ -3,6 +3,7 @@ import os
 from mysql.connector import Error as sqlError
 from mysql.connector import pooling
 from dotenv import load_dotenv
+import string
 
 ##import random for generating random numbers
 import random
@@ -193,11 +194,14 @@ class sqlAuth:
 			cursor = cnx.cursor()
 			cursor.execute("SELECT * FROM tblEmployees WHERE email = %s AND password = %s", [email, password])
 
-			if cursor.rowcount == 0:
-				return ''
-
 			user = cursor.fetchone()
+			if user == None:
+				return '', ''
+
 			print("User found: ", user[3])
+
+			cursor.execute("SELECT position FROM lnkEmployeeRegister WHERE employee_id = %s", [user[0]])
+			position = cursor.fetchone()[0]
 
 			token = sqlAuth.__get_token(user[0])
 
@@ -212,7 +216,7 @@ class sqlAuth:
 			print("Creating new token")
 
 			token = sqlAuth.create_token(user[0])
-			return token
+			return token, position
 
 		except sqlError as e:
 			print("Error logging in: ", e)
@@ -1129,11 +1133,11 @@ class sqlStock:
 
 			if cursor.rowcount == 0:
 				raise Exception("Stock could not be created")
-			
+
 			if allergins == []:
 				cnx.commit()
 				return True
-			
+
 			cursor.execute("SELECT LAST_INSERT_ID()")
 
 			stock_id = cursor.fetchone()[0]
@@ -1186,7 +1190,7 @@ class sqlStock:
 			stock = cursor.fetchone()
 			if stock == None:
 				raise Exception("Stock does not exist")
-			
+
 			cursor.execute("SELECT a.id, a.allergin FROM lnkStockAllergins sa JOIN tblAllergins a ON sa.allergin_id = a.id WHERE sa.stock_id = %s ", [stock_id])
 			allergins = cursor.fetchall()
 
@@ -1228,7 +1232,7 @@ class sqlStock:
 				print("Updated price")
 				if cursor.rowcount == 0:
 					raise Exception("Stock not updated, possibly does not exist")
-				
+
 
 			if allergins != []:
 				cursor.execute("SELECT allergin_id FROM lnkStockAllergins WHERE stock_id = %s", [stock_id])
@@ -1565,7 +1569,7 @@ class sqlFood:
 				cursor.execute("UPDATE tblFoods SET price = %s WHERE id = %s", [price, food_id])
 				if cursor.rowcount == 0:
 					raise Exception("Food not updated, possibly does not exist")
-				
+
 			if ingredients != []:
 				cursor.execute("SELECT stock_id FROM lnkFoodIngredients WHERE food_id = %s", [food_id])
 				old_ingredients = cursor.fetchall()
@@ -1640,7 +1644,7 @@ class sqlDrink:
 
 			if cursor.rowcount == 0:
 				raise Exception("Drink could not be created")
-			
+
 			cursor.execute("SELECT LAST_INSERT_ID()")
 			drink_id = cursor.fetchone()[0]
 
@@ -1807,16 +1811,15 @@ class sqlDrink:
 
 			if e.errno == 1452:
 				raise Exception("Drink does not exist")
-			
+
 			if e.errno == 1062:
 				raise Exception("Drink already exists")
 
 			raise Exception(e)
-		
+
 		except Exception as e:
 			print("Error updating drink: ", e)
 			raise Exception(e)
-		
 
 	@check_auth
 	def delete(drink_id):
@@ -1950,4 +1953,524 @@ class sqlAllergins:
 			if cnx:
 				cnx.close()
 
-	
+class sqlOrders:
+
+	@check_auth
+	def create(branch_id, discount, drinks, food) -> bool:
+		try:
+			cnx = pool.get_connection()
+			cursor = cnx.cursor()
+			cursor.execute("INSERT INTO tblOrders (branch_id, discount) VALUES (%s, %s)", [branch_id, discount])
+
+			if cursor.rowcount == 0:
+				raise Exception("Order could not be created")
+
+			cursor.execute("SELECT LAST_INSERT_ID()")
+			order_id = cursor.fetchone()[0]
+
+			# for drink in drinks:
+			# 	try:
+					
+			# 		cursor.execute("""
+			# 			UPDATE 
+			# 				lnkInventory i
+			# 			JOIN 
+			# 				lnkDrinkIngredients d ON i.stock_id = d.stock_id
+			# 			SET 
+			# 				i.current_stock = i.current_stock - d.count_req
+			# 			WHERE 
+			# 				d.drink_id = %s 
+			# 			AND 
+			# 				i.branch_id = %s
+			# 		""", [drink[0], branch_id])
+
+			# 		cursor.execute("INSERT INTO lnkDrinkSales (order_id, item_id, type, quantity, timed_price) VALUES (%s, %s, %s, %s, (SELECT price FROM lnkDrinkPrices WHERE drink_id = %s AND type = %s))", [order_id, drink[0], drink[2], drink[1], drink[0], drink[2]])
+			# 	except sqlError as e:
+			# 		if e.errno == 1452:
+			# 			cnx.rollback()
+			# 			raise Exception(f"Drink does not exist: {drink[0]}")
+					
+			# 		if e.errno == 1062:
+			# 			cnx.rollback()
+			# 			raise Exception("Drink already exists")
+					
+			# 		if e.errno == 1048:
+			# 			cnx.rollback()
+			# 			raise Exception("Drink ingredients not available")
+					
+			# 		if e.errno == 1690:
+			# 			cnx.rollback()
+			# 			cursor.execute("SELECT name FROM tblDrinks WHERE id = %s", [drink[0]])
+			# 			drink_name = cursor.fetchone()[0]
+			# 			raise Exception(f"Drink ingredients not available for item: {drink_name}")
+
+			# 		raise Exception(e)
+
+			for foo in food:
+				try:
+
+					cursor.execute("""
+						UPDATE
+							lnkInventory i
+						JOIN
+							lnkFoodIngredients f ON i.stock_id = f.stock_id
+						SET
+							i.current_stock = i.current_stock - f.count_req
+						WHERE
+							f.food_id = %s
+						AND
+							i.branch_id = %s
+					""", [foo[0], branch_id])
+
+
+					cursor.execute("INSERT INTO lnkFoodSales (order_id, item_id, quantity, timed_price) VALUES (%s, %s, %s, (SELECT price from tblFoods where id = %s))", [order_id, foo[0], foo[1], foo[0]])
+
+				except sqlError as e:
+					if e.errno == 1452:
+						cnx.rollback()
+						raise Exception(f"Food does not exist: {foo[0]}")
+					
+					if e.errno == 1690:
+						cnx.rollback()
+						cursor.execute("SELECT name FROM tblFoods WHERE id = %s", [foo[0]])
+						food_name = cursor.fetchone()[0]
+						raise Exception(f"Food ingredients not available for item: {food_name}")
+					
+					raise Exception(e)
+
+			cnx.commit()
+			return True
+		except sqlError as e:
+			print("Error creating order: ", e)
+			if e.errno == 1062:
+				raise Exception("Order already exists")
+			raise Exception(e)
+		except Exception as e:
+			print("Error creating order: ", e)
+			raise Exception(e)
+		finally:
+			if cursor:
+				cursor.close()
+			if cnx:
+				cnx.close()
+
+	@check_auth
+	def get_all(branch_id) -> list:
+		try:
+			cnx = pool.get_connection()
+			cursor = cnx.cursor()
+			cursor.execute("""
+				SELECT 
+					o.id AS order_id,
+					o.created_at AS order_created_at,
+					td.name AS drink_name,
+					ds.quantity AS drink_quantity,
+					tf.name AS food_name,
+					fs.quantity AS food_quantity
+				FROM 
+					tblOrders o
+				LEFT JOIN 
+					lnkDrinkSales ds ON o.id = ds.order_id
+				LEFT JOIN 
+					tblDrinks td ON ds.item_id = td.id
+				LEFT JOIN 
+					lnkFoodSales fs ON o.id = fs.order_id
+				LEFT JOIN 
+					tblFoods tf ON fs.item_id = tf.id
+				WHERE 
+					o.branch_id = %s
+				""", [branch_id])
+
+			results = cursor.fetchall()
+			if cursor.rowcount == 0:
+				raise Exception("No orders found")
+
+			returned_orders = {}
+			for order_id, order_created_at, drink_name, drink_quantity, food_name, food_quantity in results:
+				if order_id in returned_orders:
+					returned_orders[order_id][2].add((drink_name, drink_quantity))
+					returned_orders[order_id][3].add((food_name, food_quantity))
+				else:
+					returned_orders[order_id] = [
+						order_id,
+						order_created_at,
+						{(drink_name, drink_quantity)},
+						{(food_name, food_quantity)}
+					]
+			
+			retlist = []
+			for order in returned_orders:
+				order = returned_orders[order]
+
+				order[1] = order[1].strftime("%Y-%m-%d %H:%M:%S")
+				order[2] = list(order[2])
+				order[3] = list(order[3])
+				retlist.append(order)
+
+			return retlist
+		except sqlError as e:
+			print("Error getting orders: ", e)
+			raise Exception(e)
+		except Exception as e:
+			print("Error getting orders: ", e)
+			raise Exception(e)
+		finally:
+			if cursor:
+				cursor.close()
+			if cnx:
+				cnx.close()
+
+
+	@check_auth
+	def get(order_id) -> dict:
+		try:
+			cnx = pool.get_connection()
+			cursor = cnx.cursor()
+			cursor.execute("SELECT * FROM tblOrders WHERE id = %s", [order_id])
+			result = cursor.fetchone()
+			if result == None:
+				raise Exception("Order does not exist")
+
+			# Fetch drink sales details for the given order_id
+			cursor.execute("SELECT od.item_id, od.quantity FROM lnkDrinkSales od JOIN tblDrinks d ON od.item_id = d.id WHERE od.order_id = %s", [order_id])
+			drinks = cursor.fetchall()
+
+			# Fetch food sales details for the given order_id
+			cursor.execute("SELECT fs.item_id, fs.quantity FROM lnkFoodSales fs JOIN tblFoods f ON fs.item_id = f.id WHERE fs.order_id = %s", [order_id])
+			food = cursor.fetchall()
+
+			retlist = list(result)
+			retlist[2] = retlist[2].strftime("%Y-%m-%d %H:%M:%S")
+
+
+
+			return retlist, drinks, food
+		except sqlError as e:
+			print("Error getting order: ", e)
+			raise Exception(e)
+		except Exception as e:
+			print("Error getting order: ", e)
+			raise Exception(e)
+		finally:
+			if cursor:
+				cursor.close()
+			if cnx:
+				cnx.close()
+
+	@check_auth
+	def update(order_id, drinks, food) -> bool:
+		try:
+			cnx = pool.get_connection()
+			cursor = cnx.cursor()
+
+			if drinks != []:
+				cursor.execute("SELECT drink_id FROM lnkOrderDrinks WHERE order_id = %s", [order_id])
+				old_drinks = cursor.fetchall()
+
+				for drink in drinks:
+					should_keep = False
+					unseen = True
+					delete_id = None
+					for old_drink in old_drinks:
+						if drink[0] == old_drink[0]:
+							should_keep = True
+							unseen = False
+							delete_id = old_drinks.index(old_drink)
+							cursor.execute("UPDATE lnkOrderDrinks SET count = %s WHERE order_id = %s AND drink_id = %s", [drink[1], order_id, drink[0]])
+							break
+					if should_keep:
+						old_drinks.remove(old_drinks[delete_id])
+
+					if unseen:
+						cursor.execute("INSERT INTO lnkOrderDrinks (order_id, drink_id, count) VALUES (%s, %s, %s)", [order_id, drink[0], drink[1]])
+
+				for drink in old_drinks:
+					cursor.execute("DELETE FROM lnkOrderDrinks WHERE order_id = %s AND drink_id = %s", [order_id, drink[0]])
+
+			if food != []:
+				cursor.execute("SELECT food_id FROM lnkOrderFood WHERE order_id = %s", [order_id])
+				old_food = cursor.fetchall()
+
+				for food in food:
+					should_keep = False
+					unseen = True
+					delete_id = None
+					for old_food in old_food:
+						if food[0] == old_food[0]:
+							should_keep = True
+							unseen = False
+							delete_id = old_food
+							cursor.execute("UPDATE lnkOrderFood SET count = %s WHERE order_id = %s AND food_id = %s", [food[1], order_id, food[0]])
+							break
+					if should_keep:
+						old_food.remove(old_food[delete_id])
+
+					if unseen:
+						cursor.execute("INSERT INTO lnkOrderFood (order_id, food_id, count) VALUES (%s, %s, %s)", [order_id, food[0], food[1]])
+
+				for food in old_food:
+					cursor.execute("DELETE FROM lnkOrderFood WHERE order_id = %s AND food_id = %s", [order_id, food[0]])
+
+			cnx.commit()
+			return True
+		except sqlError as e:
+			print("Error updating order: ", e)
+
+			if e.errno == 1452:
+				raise Exception("Order does not exist")
+
+			if e.errno == 1062:
+				raise Exception("Order already exists")
+
+			raise Exception(e)
+		except Exception as e:
+			print("Error updating order: ", e)
+			raise Exception(e)
+
+		finally:
+			if cursor:
+				cursor.close()
+			if cnx:
+				cnx.close()
+
+
+	@check_auth
+	def delete(order_id) -> bool:
+		try:
+			cnx = pool.get_connection()
+			cursor = cnx.cursor()
+			cursor.execute("DELETE FROM tblOrders WHERE id = %s", [order_id])
+			cnx.commit()
+			return True
+		except sqlError as e:
+			if e.errno == 1452:
+				raise Exception("Order does not exist")
+			raise Exception(e)
+		except Exception as e:
+			print("Error deleting order: ", e)
+			raise Exception(e)
+		finally:
+			if cursor:
+				cursor.close()
+			if cnx:
+				cnx.close()
+
+	@check_auth
+	def find(drink, food):
+		try:
+			cnx = pool.get_connection()
+			cursor = cnx.cursor()
+			cursor.execute("SELECT * FROM tblOrders WHERE id IN (SELECT order_id FROM lnkOrderDrinks WHERE drink_id = %s) OR id IN (SELECT order_id FROM lnkOrderFood WHERE food_id = %s) ORDER BY created_at DESC LIMIT 10", [drink, food])
+			result = cursor.fetchall()
+
+			return result
+		except sqlError as e:
+			print("Error finding orders: ", e)
+
+			if e.errno == 1452:
+				raise Exception("Order does not exist")
+		except Exception as e:
+			print("Error finding orders: ", e)
+			raise Exception(e)
+		finally:
+			if cursor:
+				cursor.close()
+			if cnx:
+				cnx.close()
+
+
+class sqlMenu:
+
+	@check_auth
+	def get(branch_id, category)-> list:
+
+		try:
+			cnx = pool.get_connection()
+			cursor = cnx.cursor()
+			
+			drink = True if category == "Cocktail" or category == "Beers" or category == "Wines" or category == "Shots" or category == "Liqours" or category == "Soft" else False
+			print("Category: ", category)
+			print("Drink: ", drink)
+
+			items = {}
+
+			### CHANGE TO i.current_stock > (s.max_stock * 0.95) AFTER STOCK IS ADDED
+			if drink:
+				cursor.execute("""
+					SELECT 
+						d.id AS item_id, 
+						d.name as item_name, 
+						d.description AS item_description, 
+						d.req_id AS require_id, 
+						d.alc_perc AS alcohol_percentage, 
+						dp.type as drink_size, 
+						dp.price as drink_price 
+					FROM 
+						tblDrinks d 
+					JOIN 
+						lnkDrinkIngredients di ON d.id = di.drink_id 
+					JOIN
+						tblStock s ON di.stock_id = s.id 
+					JOIN
+						lnkInventory i ON di.stock_id = i.stock_id 
+					LEFT JOIN
+						lnkDrinkPrices dp ON d.id = dp.drink_id 
+					WHERE
+						category = %s AND i.branch_id = %s 
+					AND
+						i.current_stock < (s.max_stock * 0.95)
+				""", [category, branch_id ])
+				result = cursor.fetchall()
+
+				if result == []:
+					raise Exception("No items found")
+
+				for item_id, item_name, item_description, require_id, alcohol_percentage, drink_size, drink_price in result:
+					if item_id in items:
+						items[item_id][5].add((drink_size, float(drink_price)))
+					else:
+						items[item_id] = [
+							item_id,
+							item_name,
+							item_description,
+							require_id,
+							alcohol_percentage,
+							{(drink_size, float(drink_price))}
+						]
+
+				retList = []
+				for item in items:
+					item = items[item]
+					item[5] = list(item[5])
+					retList.append(item)
+
+				return retList
+
+
+			### CHANGE TO i.current_stock > (s.max_stock * 0.95) AFTER STOCK IS ADDED
+
+			cursor.execute("""
+				SELECT 
+					f.id AS item_id, 
+					f.name as item_name, 
+					f.description AS item_description, 
+					f.main AS main, 
+					f.type AS item_type, 
+					f.price AS item_price
+				FROM
+					tblFoods f
+				JOIN
+					lnkFoodIngredients fi ON f.id = fi.food_id
+				JOIN
+					tblStock s ON fi.stock_id = s.id
+				JOIN
+					lnkInventory i ON fi.stock_id = i.stock_id
+				WHERE
+					category = %s AND i.branch_id = %s
+				AND
+					i.current_stock < (s.max_stock * 0.95)	
+			""", [category, branch_id])
+			result = cursor.fetchall()
+
+			if result == []:
+				raise Exception("No items found")
+			
+			for item_id, item_name, item_description, main, item_type, item_price in result:
+				items[item_id] = [
+					item_id,
+					item_name,
+					item_description,
+					main,
+					item_type,
+					(item_type, float(item_price))
+				]
+
+			print(result)
+
+			return result
+		except sqlError as e:
+			print("Error getting menu: ", e)
+			raise Exception(e)
+		except Exception as e:
+			print("Error getting menu: ", e)
+			raise Exception(e)
+		finally:
+			if cursor:
+				cursor.close()
+			if cnx:
+				cnx.close()
+
+
+class sqlManger:
+	@check_auth
+	def discount(branch_id, code):
+		try:
+			cnx = pool.get_connection()
+			cursor = cnx.cursor()
+			cursor.execute("SELECT * FROM tblBranches WHERE access_code = %s and id = %s", [code, branch_id])
+			result = cursor.fetchone()
+			if result == None:
+				return False
+
+			return True
+		except sqlError as e:
+			print("Error getting manager: ", e)
+			raise Exception(e)
+		except Exception as e:
+			print("Error getting manager: ", e)
+			raise Exception(e)
+		finally:
+			if cursor:
+				cursor.close()
+			if cnx:
+				cnx.close()
+
+	@check_auth
+	def get(branch_id):
+		try:
+			cnx = pool.get_connection()
+			cursor = cnx.cursor()
+			cursor.execute("SELECT access_code FROM tblBranches WHERE id = %s", [branch_id])
+			result = cursor.fetchone()
+			if result == None:
+				raise Exception("Branch does not exist")
+
+			return result
+		except sqlError as e:
+			print("Error getting manager: ", e)
+			raise Exception(e)
+		except Exception as e:
+			print("Error getting manager: ", e)
+			raise Exception(e)
+		finally:
+			if cursor:
+				cursor.close()
+			if cnx:
+				cnx.close()
+
+
+	@check_auth
+	def update():
+		try:
+			cnx = pool.get_connection()
+			cursor = cnx.cursor()
+			cursor.execute("SELECT id FROM tblBranches")
+			result = cursor.fetchall()
+			if result == []:
+				raise Exception("Branches could not be retreived")
+			
+			for branch in result:
+
+				## create random 6 digit access code
+				access_code = ''.join(random.choices(string.digits, k=6))
+				cursor.execute("UPDATE tblBranches SET access_code = %s WHERE id = %s", [access_code, branch[0]])
+
+			cnx.commit()
+
+			return True
+		except sqlError as e:
+			print("Error updating manager: ", e)
+			raise Exception(e)
+		except Exception as e:
+			print("Error updating manager: ", e)
+			raise Exception(e)
