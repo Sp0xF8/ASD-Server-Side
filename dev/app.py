@@ -1,5 +1,5 @@
 from flask import Flask, request, jsonify, render_template_string
-from handlers.database import sqlBranch, sqlLocation, sqlEmployee, sqlAuth, sqlSisters, sqlEmployeeDiscounts, sqlDiscounts, sqlReservations, sqlStock, sqlInventory, sqlFood, sqlDrink, sqlAllergins, sqlOrders, sqlMenu
+from handlers.database import sqlBranch, sqlLocation, sqlEmployee, sqlAuth, sqlSisters, sqlEmployeeDiscounts, sqlDiscounts, sqlReservations, sqlStock, sqlInventory, sqlFood, sqlDrink, sqlAllergins, sqlOrders, sqlMenu, sqlManger
 import logging
 from collections import deque
 from handlers.encryption import Encryption
@@ -1069,6 +1069,26 @@ def getMenu():
 			return returnEncrypted(token, result, 200)
 		except Exception as e:
 			return returnEncrypted(token, {"error": str(e)}, 400)
+
+
+###
+### 		Manager Discount API ROUTES
+###				C.R.U.D.
+
+@app.route('/api/v1/checkManagerDiscount', methods=['POST'])
+def checkManagerDiscount():
+	if request.method == 'POST':
+		try:
+			data, token = decryptRecieved(request)
+
+			if( not sqlManger.discount(data['branch_id'], data['code'], token=token)):
+				raise Exception("Discount code invalid or expired")
+			
+
+			return returnEncrypted(token, {"success": "Discount Code Accepted"}, 200)
+		except Exception as e:
+			return returnEncrypted(token, {"error": str(e)}, 400)
+
 
 ###
 ### 		MAIN

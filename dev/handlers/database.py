@@ -1967,23 +1967,74 @@ class sqlOrders:
 			cursor.execute("SELECT LAST_INSERT_ID()")
 			order_id = cursor.fetchone()[0]
 
-			for drink in drinks:
-				try:
-					cursor.execute("INSERT INTO lnkDrinkSales (order_id, item_id, type, quantity, timed_price) VALUES (%s, %s, %s, %s, (SELECT price FROM lnkDrinkPrices WHERE drink_id = %s AND type = %s))", [order_id, drink[0], drink[2], drink[1], drink[0], drink[2]])
-				except sqlError as e:
-					if e.errno == 1452:
-						cnx.rollback()
-						raise Exception(f"Drink does not exist: {drink[0]}")
-					raise Exception(e)
+			# for drink in drinks:
+			# 	try:
+					
+			# 		cursor.execute("""
+			# 			UPDATE 
+			# 				lnkInventory i
+			# 			JOIN 
+			# 				lnkDrinkIngredients d ON i.stock_id = d.stock_id
+			# 			SET 
+			# 				i.current_stock = i.current_stock - d.count_req
+			# 			WHERE 
+			# 				d.drink_id = %s 
+			# 			AND 
+			# 				i.branch_id = %s
+			# 		""", [drink[0], branch_id])
+
+			# 		cursor.execute("INSERT INTO lnkDrinkSales (order_id, item_id, type, quantity, timed_price) VALUES (%s, %s, %s, %s, (SELECT price FROM lnkDrinkPrices WHERE drink_id = %s AND type = %s))", [order_id, drink[0], drink[2], drink[1], drink[0], drink[2]])
+			# 	except sqlError as e:
+			# 		if e.errno == 1452:
+			# 			cnx.rollback()
+			# 			raise Exception(f"Drink does not exist: {drink[0]}")
+					
+			# 		if e.errno == 1062:
+			# 			cnx.rollback()
+			# 			raise Exception("Drink already exists")
+					
+			# 		if e.errno == 1048:
+			# 			cnx.rollback()
+			# 			raise Exception("Drink ingredients not available")
+					
+			# 		if e.errno == 1690:
+			# 			cnx.rollback()
+			# 			cursor.execute("SELECT name FROM tblDrinks WHERE id = %s", [drink[0]])
+			# 			drink_name = cursor.fetchone()[0]
+			# 			raise Exception(f"Drink ingredients not available for item: {drink_name}")
+
+			# 		raise Exception(e)
 
 			for foo in food:
 				try:
+
+					cursor.execute("""
+						UPDATE
+							lnkInventory i
+						JOIN
+							lnkFoodIngredients f ON i.stock_id = f.stock_id
+						SET
+							i.current_stock = i.current_stock - f.count_req
+						WHERE
+							f.food_id = %s
+						AND
+							i.branch_id = %s
+					""", [foo[0], branch_id])
+
+
 					cursor.execute("INSERT INTO lnkFoodSales (order_id, item_id, quantity, timed_price) VALUES (%s, %s, %s, (SELECT price from tblFoods where id = %s))", [order_id, foo[0], foo[1], foo[0]])
 
 				except sqlError as e:
 					if e.errno == 1452:
 						cnx.rollback()
 						raise Exception(f"Food does not exist: {foo[0]}")
+					
+					if e.errno == 1690:
+						cnx.rollback()
+						cursor.execute("SELECT name FROM tblFoods WHERE id = %s", [foo[0]])
+						food_name = cursor.fetchone()[0]
+						raise Exception(f"Food ingredients not available for item: {food_name}")
+					
 					raise Exception(e)
 
 			cnx.commit()
@@ -2240,24 +2291,132 @@ class sqlMenu:
 			print("Category: ", category)
 			print("Drink: ", drink)
 
-			result = None
+			items = {}
 
+			### CHANGE TO i.current_stock > (s.max_stock * 0.95) AFTER STOCK IS ADDED
 			if drink:
-				cursor.execute("SELECT d.id AS item_id, d.name as item_name, d.description AS item_description, d.req_id AS require_id, d.alc_perc AS alcohol_percentage FROM tblDrinks d JOIN lnkDrinkIngredients di ON d.id = di.drink_id JOIN tblStock s ON di.stock_id = s.id JOIN lnkInventory i ON di.stock_id = i.stock_id WHERE category = %s AND i.branch_id = %s AND i.current_stock < (s.max_stock * 0.95)", [category, branch_id ])
+				cursor.execute("""
+					SELECT 
+						d.id AS item_id, 
+						d.name as item_name, 
+						d.description AS item_description, 
+						d.req_id AS require_id, 
+						d.alc_perc AS alcohol_percentage, 
+						dp.type as drink_size, 
+						dp.price as drink_price 
+					FROM 
+						tblDrinks d 
+					JOIN 
+						lnkDrinkIngredients di ON d.id = di.drink_id 
+					JOIN
+						tblStock s ON di.stock_id = s.id 
+					JOIN
+						lnkInventory i ON di.stock_id = i.stock_id 
+					LEFT JOIN
+						lnkDrinkPrices dp ON d.id = dp.drink_id 
+					WHERE
+						category = %s AND i.branch_id = %s 
+					AND
+						i.current_stock < (s.max_stock * 0.95)
+				""", [category, branch_id ])
 				result = cursor.fetchall()
-			# else:
-			# 	cursor.execute("SELECT * FROM tblFoods WHERE category = %s", [category])
-			# 	result = cursor.fetchall()
 
-			if result == None:
+				if result == []:
+					raise Exception("No items found")
+
+				for item_id, item_name, item_description, require_id, alcohol_percentage, drink_size, drink_price in result:
+					if item_id in items:
+						items[item_id][5].add((drink_size, float(drink_price)))
+					else:
+						items[item_id] = [
+							item_id,
+							item_name,
+							item_description,
+							require_id,
+							alcohol_percentage,
+							{(drink_size, float(drink_price))}
+						]
+
+				retList = []
+				for item in items:
+					item = items[item]
+					item[5] = list(item[5])
+					retList.append(item)
+
+				return retList
+
+
+			### CHANGE TO i.current_stock > (s.max_stock * 0.95) AFTER STOCK IS ADDED
+
+			cursor.execute("""
+				SELECT 
+					f.id AS item_id, 
+					f.name as item_name, 
+					f.description AS item_description, 
+					f.main AS main, 
+					f.type AS item_type, 
+					f.price AS item_price
+				FROM
+					tblFoods f
+				JOIN
+					lnkFoodIngredients fi ON f.id = fi.food_id
+				JOIN
+					tblStock s ON fi.stock_id = s.id
+				JOIN
+					lnkInventory i ON fi.stock_id = i.stock_id
+				WHERE
+					category = %s AND i.branch_id = %s
+				AND
+					i.current_stock < (s.max_stock * 0.95)	
+			""", [category, branch_id])
+			result = cursor.fetchall()
+
+			if result == []:
 				raise Exception("No items found")
-				
+			
+			for item_id, item_name, item_description, main, item_type, item_price in result:
+				items[item_id] = [
+					item_id,
+					item_name,
+					item_description,
+					main,
+					item_type,
+					(item_type, float(item_price))
+				]
+
+			print(result)
+
 			return result
 		except sqlError as e:
 			print("Error getting menu: ", e)
 			raise Exception(e)
 		except Exception as e:
 			print("Error getting menu: ", e)
+			raise Exception(e)
+		finally:
+			if cursor:
+				cursor.close()
+			if cnx:
+				cnx.close()
+
+
+class sqlManger:
+	@check_auth
+	def discount(branch_id, code):
+		try:
+			cnx = pool.get_connection()
+			cursor = cnx.cursor()
+			cursor.execute("SELECT * FROM tblBranches WHERE access_code = %s and id = %s", [code, branch_id])
+			result = cursor.fetchone()
+			if result == None:
+				return False
+
+			return True
+		except sqlError as e:
+			print("Error getting manager: ", e)
+			raise Exception(e)
+		except Exception as e:
+			print("Error getting manager: ", e)
 			raise Exception(e)
 		finally:
 			if cursor:
