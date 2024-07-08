@@ -121,7 +121,7 @@ def login():
 		try:
 			data, tag = decryptRecieved(request)
 
-			token, role = sqlAuth.login(data['email'], data['password'])
+			token, uid, role = sqlAuth.login(data['email'], data['password'])
 			print("point4")
 			print("")
 
@@ -130,7 +130,7 @@ def login():
 				encrypted_message = encryption.hsencrypt(tag, {"error": "Invalid login credentials"})
 				return jsonify({"transfer":encrypted_message}), 400
 			
-			encrypted_message = encryption.hsencrypt(tag, {"token": token, "role": role})
+			encrypted_message = encryption.hsencrypt(tag, {"token": token, "role": role, "uid": uid})
 			return jsonify({"success": "Login complete", "transfer": encrypted_message}), 200
 
 		except Exception as e:
@@ -143,6 +143,8 @@ def logout():
 		try:
 
 			data = request.get_json(force=True)
+
+			encryption.public_keys.pop(data['token'], None)
 
 			if(not sqlAuth.delete_token(data['token'])):
 				return jsonify({"failure": "Failed to logout"}), 400
@@ -345,9 +347,6 @@ def getEmployee():
 			if result == None:
 				raise Exception("Could not retreive requested Employee data")
 
-			result = list(result)
-			result[5] = result[5].strftime("%Y-%m-%d %H:%M:%S")
-			result[6] = result[6].strftime("%Y-%m-%d %H:%M:%S")
 
 			return returnEncrypted(token, result, 200)
 		except Exception as e:
@@ -1116,6 +1115,21 @@ def updateManagerDiscount():
 			return returnEncrypted(data['token'], {"success": "Table Update Complete"}, 200)
 		except Exception as e:
 			return returnEncrypted(data['token'], {"error": str(e)}, 400)
+
+@app.route('/api/v1/getCategories', methods=['POST'])
+def getCategories():
+	if request.method == 'POST':
+		try:
+			data = request.get_json(force=True)
+
+			result = sqlMenu.get_categories(token=data['token'])
+			if result == None:
+				raise Exception("Could not retreive Categories from database")
+
+			return returnEncrypted(data['token'], result, 200)
+		except Exception as e:
+			return returnEncrypted(data['token'], {"error": str(e)}, 400)
+
 
 ###
 ### 		MAIN

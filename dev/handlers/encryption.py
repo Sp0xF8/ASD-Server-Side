@@ -48,14 +48,17 @@ class Encryption:
 					key_file.read(),
 					backend=default_backend()
 				)
-			print("deleting key")
-			os.remove(fullkeypath)
+
+			if keypath != "../keys/":
+				print("deleting key")
+				os.remove(fullkeypath)
 
 			if token == '':
 				return False
 
 			if keypath == "../keys/":
 				self.public_keys[token] = public_key
+				print(f"Public key for {token} loaded successfully!")
 				return True
 			else:
 				return public_key
@@ -101,6 +104,8 @@ class Encryption:
 
 	def encrypt(self, token, dick):
 		try:
+			print(self.public_keys)
+
 			if token not in self.public_keys:
 				if not self.load_public_key(token):
 					return None
