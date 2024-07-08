@@ -196,12 +196,12 @@ class sqlAuth:
 
 			user = cursor.fetchone()
 			if user == None:
-				return '', ''
+				return '', '', ''
 
 			print("User found: ", user[3])
 
-			cursor.execute("SELECT position FROM lnkEmployeeRegister WHERE employee_id = %s", [user[0]])
-			position = cursor.fetchone()[0]
+			cursor.execute("SELECT branch_id, position FROM lnkEmployeeRegister WHERE employee_id = %s", [user[0]])
+			posBranch = cursor.fetchone()
 
 			token = sqlAuth.__get_token(user[0])
 
@@ -216,7 +216,7 @@ class sqlAuth:
 			print("Creating new token")
 
 			token = sqlAuth.create_token(user[0])
-			return token, position
+			return token, user[0], posBranch
 
 		except sqlError as e:
 			print("Error logging in: ", e)
@@ -502,11 +502,14 @@ class sqlEmployee:
 	@check_auth
 	def get(employee_id) -> dict:
 		try:
-
+			print("Getting employee: ", employee_id)
 			cnx = pool.get_connection()
 			cursor = cnx.cursor()
-			cursor.execute("SELECT * FROM tblEmployees WHERE id = %s", [employee_id])
+			cursor.execute("SELECT e.first_name, e.last_name, e.email, er.position, e.created_at FROM tblEmployees e JOIN lnkEmployeeRegister er ON e.id = er.employee_id WHERE e.id = %s", [employee_id])
 			result = cursor.fetchone()
+			print(result)
+			result = list(result)
+			result[4] = result[4].strftime("%Y-%m-%d %H:%M:%S")
 			return result
 
 		except sqlError as e:
@@ -521,7 +524,7 @@ class sqlEmployee:
 
 
 	@check_auth
-	def update(employee_id, first_name, last_name, email, old_password, new_password=None) -> bool:
+	def update(employee_id, first_name, last_name, email, old_password, new_password) -> bool:
 
 		try:
 			print("updating")
@@ -535,11 +538,17 @@ class sqlEmployee:
 			print("employee valid")
 			cursor.fetchall()
 
-			cursor.execute("UPDATE tblEmployees SET first_name = %s, last_name = %s, email = %s WHERE id = %s", [first_name, last_name, email, employee_id])
-			print("updated std")
+			if not first_name == '':
+				cursor.execute("UPDATE tblEmployees SET first_name = %s WHERE id = %s", [first_name, employee_id])
 
-			if not new_password == None:
+			if not last_name == '':
+				cursor.execute("UPDATE tblEmployees SET last_name = %s WHERE id = %s", [last_name, employee_id])
+
+			if not new_password == '':
 				cursor.execute("UPDATE tblEmployees SET password = %s WHERE id = %s", [new_password, employee_id])
+
+			if not email == '':
+				cursor.execute("UPDATE tblEmployees SET email = %s WHERE id = %s", [email, employee_id])
 
 			cnx.commit()
 			return True
@@ -2400,6 +2409,40 @@ class sqlMenu:
 			if cnx:
 				cnx.close()
 
+
+	@check_auth
+	def get_categories():
+		try:
+			cnx = pool.get_connection()
+			cursor = cnx.cursor()
+			cursor.execute("SELECT DISTINCT category FROM tblFoods")
+			food_categories = cursor.fetchall()
+
+			cursor.execute("SELECT DISTINCT category FROM tblDrinks")
+			drink_categories = cursor.fetchall()
+
+			categories = {
+				"food": [],
+				"drink": []
+			}
+			for category in food_categories:
+				categories["food"].append(category[0])
+
+			for category in drink_categories:
+				categories["drink"].append(category[0])
+
+			return categories
+		except sqlError as e:
+			print("Error getting categories: ", e)
+			raise Exception(e)
+		except Exception as e:
+			print("Error getting categories: ", e)
+			raise Exception(e)
+		finally:
+			if cursor:
+				cursor.close()
+			if cnx:
+				cnx.close()
 
 class sqlManger:
 	@check_auth
