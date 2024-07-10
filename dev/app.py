@@ -334,6 +334,8 @@ def getEmployees():
 				resList[6] = resList[6].strftime("%Y-%m-%d %H:%M:%S")
 				retList.append(resList)
 
+			print(retList)
+
 			return returnEncrypted(data['token'], retList, 200)
 		except Exception as e:
 			return returnEncrypted(data['token'], {"error": str(e)}, 400)
@@ -351,6 +353,20 @@ def getEmployee():
 			return returnEncrypted(token, result, 200)
 		except Exception as e:
 			return returnEncrypted(token, {"error": str(e)}, 400)
+		
+@app.route('/api/v1/getAllEmployeeData', methods=['POST'])
+def getAllEmployeeData():
+	if request.method == 'POST':
+		try:
+			data = request.get_json(force=True)
+			result = sqlEmployee.get_all_data(token=data['token'])
+			if result == None:
+				raise Exception("Could not retreive requested Employee data")
+
+
+			return returnEncrypted(data['token'], result, 200)
+		except Exception as e:
+			return returnEncrypted(data['token'], {"error": str(e)}, 400)
 
 @app.route('/api/v1/updateEmployee', methods=['POST'])
 def updateEmployee():
