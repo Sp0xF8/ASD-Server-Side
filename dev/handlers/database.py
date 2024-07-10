@@ -1,4 +1,4 @@
-
+import sys
 import os
 from mysql.connector import Error as sqlError
 from mysql.connector import pooling
@@ -52,6 +52,10 @@ def check_auth(func):
 			sqlAuth.check_access(token=token, access_level=access_level)
 
 			return func(*args, **kwargs)
+		except TypeError as e:
+			print("Error in check_auth: ", e)
+			raise Exception("Error checking authentication, Token Likely Expired")
+
 		except Exception as e:
 			print("Error in check_auth: ", e)
 			raise Exception(e)
@@ -485,13 +489,49 @@ class sqlEmployee:
 
 			cnx = pool.get_connection()
 			cursor = cnx.cursor()
-			cursor.execute("SELECT * FROM tblEmployees")
+			cursor.execute("SELECT id, first_name, last_name, email, active, created_at, updated_at FROM tblEmployees")
 			result = cursor.fetchall()
+
+			##print the size in bytes of the result
+			print("Size of result: ", sys.getsizeof(result))
+
+			print(result)
+
 			return result
 
 		except sqlError as e:
 			print("Error getting employees: ", e)
-			return None
+			raise Exception(e)
+
+		finally:
+			if cursor:
+				cursor.close()
+			if cnx:
+				cnx.close()
+
+	@check_auth
+	def get_all_data() -> list:
+		try:
+
+			cnx = pool.get_connection()
+			cursor = cnx.cursor()
+			cursor.execute("SELECT e.id, e.first_name, e.last_name, e.email, er.position, b.name, e.created_at FROM tblEmployees e JOIN lnkEmployeeRegister er ON e.id = er.employee_id JOIN tblBranches b ON er.branch_id = b.id")
+			result = cursor.fetchall()
+
+			if result == None:
+				raise Exception("No employees found")
+			
+			retlist = []
+			for res in result:
+				reslist = list(res)
+				reslist[6] = reslist[6].strftime("%Y-%m-%d %H:%M:%S")
+				retlist.append(reslist)
+
+			return retlist
+
+		except sqlError as e:
+			print("Error getting employees: ", e)
+			raise Exception(e)
 
 		finally:
 			if cursor:
@@ -763,12 +803,12 @@ class sqlDiscounts:
 
 class sqlSisters:
 	@check_auth
-	def create(branch1, branch2, location) -> bool:
+	def create(branch1, branch2, location, access_code_1, access_code_2) -> bool:
 		try:
 
 			cnx = pool.get_connection()
 			cursor = cnx.cursor()
-			cursor.execute("INSERT INTO tblBranches (name) VALUES (%s), (%s)", [branch1, branch2])
+			cursor.execute("INSERT INTO tblBranches (name, access_code) VALUES (%s, %s), (%s, %s)", [branch1, access_code_1, branch2, access_code_2])
 
 			cursor.execute("INSERT INTO tblLocations (city) VALUES (%s)", [location])
 
@@ -783,6 +823,25 @@ class sqlSisters:
 				return False
 			ids = cursor.fetchall()
 
+			for id in ids:
+
+				cursor.execute("SELECT * FROM tblStock")
+				stocks = cursor.fetchall()
+
+				for stock in stocks:
+
+					try:
+						cursor.execute("INSERT INTO lnkInventory (stock_id, branch_id, current_stock) VALUES (%s, %s, 0)", [stock[0], id[0]])
+					except sqlError as e:
+						if e.errno == 1062:
+							print("Iventory item already exists for this branch, skipping item ", stock[1])
+							continue
+						if e.errno == 1452:
+							raise Exception("Branch does not exist")
+
+						raise Exception(e)
+					
+
 
 			cursor.execute("INSERT INTO lnkSisterBranches (branch_id_1, branch_id_2, location_id) VALUES (%s, %s, %s)", [ids[0][0], ids[1][0], location_id])
 
@@ -790,7 +849,16 @@ class sqlSisters:
 			return True
 		except sqlError as e:
 			print("Error inserting: ", e)
-			return False
+			raise Exception(e)
+		
+		except Exception as e:
+			print("Error inserting: ", e)
+			raise Exception(e)
+		finally:
+			if cursor:
+				cursor.close()
+			if cnx:
+				cnx.close()
 
 	@check_auth
 	def get_all() -> list:
@@ -1024,11 +1092,97 @@ class sqlReservations:
 				cnx.close()
 
 	@check_auth
+	def create_at_sister(branch_id, cus_name, cus_number, size, requirements, datetime) -> bool:
+		try:
+			cnx = pool.get_connection()
+			cursor = cnx.cursor()
+
+			cursor.execute("""
+					INSERT INTO tblReservations 
+						(branch_id, cus_name, cus_number, size, requirements, datetime) 
+					VALUES 
+						(
+							(
+								SELECT CASE 
+									WHEN branch_id_1 = %s THEN branch_id_2 
+									ELSE branch_id_1 
+								END 
+								FROM lnkSisterBranches 
+								WHERE branch_id_1 = %s OR branch_id_2 = %s
+								LIMIT 1
+							), %s, %s, %s, %s, %s
+						)
+				""", [branch_id, branch_id, branch_id, cus_name, cus_number, size, requirements, datetime])
+			cnx.commit()
+			return True
+		except sqlError as e:
+			print("Error creating reservation: ", e)
+
+			if e.errno == 1452:
+				raise Exception("Branch does not exist")
+
+			if e.errno == 1062:
+				raise Exception("Reservation already exists")
+
+			raise Exception(e)
+		except Exception as e:
+			print("Error creating reservation: ", e)
+			raise Exception(e)
+		finally:
+			if cursor:
+				cursor.close()
+			if cnx:
+				cnx.close()
+
+
+	@check_auth
 	def get(branch_id) -> list:
 		try:
 			cnx = pool.get_connection()
 			cursor = cnx.cursor()
 			cursor.execute("SELECT * FROM tblReservations WHERE branch_id = %s", [branch_id])
+			if cursor.rowcount == 0:
+				raise Exception("No reservations found")
+			result = cursor.fetchall()
+
+			retlist = []
+			for res in result:
+				reslist = list(res)
+				print(reslist)
+
+				reslist[6] = reslist[6].strftime("%Y-%m-%d %H:%M:%S")
+				retlist.append([reslist[0], reslist[1], reslist[2], reslist[3], reslist[4], reslist[5], reslist[6]])
+
+			cnx.commit()
+
+			return retlist
+		except sqlError as e:
+			print("Error getting reservations: ", e)
+			raise Exception(e)
+		except Exception as e:
+			print("Error getting reservations: ", e)
+			raise Exception(e)
+		finally:
+			if cursor:
+				cursor.close()
+			if cnx:
+				cnx.close()
+
+
+	@check_auth
+	def list_date(branch_id, date) -> list:
+		try:
+			cnx = pool.get_connection()
+			cursor = cnx.cursor()
+
+			datetimeObj = datetime.strptime(date, "%Y-%m-%d %H:%M:%S")
+			date_str = datetimeObj.strftime("%Y-%m-%d")
+
+			# Use a wildcard to match any time on the given date
+			cursor.execute(
+				"SELECT * FROM tblReservations WHERE branch_id = %s AND datetime LIKE %s",
+				(branch_id, f"{date_str}%")
+			)
 			if cursor.rowcount == 0:
 				raise Exception("No reservations found")
 			result = cursor.fetchall()

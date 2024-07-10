@@ -334,6 +334,8 @@ def getEmployees():
 				resList[6] = resList[6].strftime("%Y-%m-%d %H:%M:%S")
 				retList.append(resList)
 
+			print(retList)
+
 			return returnEncrypted(data['token'], retList, 200)
 		except Exception as e:
 			return returnEncrypted(data['token'], {"error": str(e)}, 400)
@@ -351,6 +353,20 @@ def getEmployee():
 			return returnEncrypted(token, result, 200)
 		except Exception as e:
 			return returnEncrypted(token, {"error": str(e)}, 400)
+		
+@app.route('/api/v1/getAllEmployeeData', methods=['POST'])
+def getAllEmployeeData():
+	if request.method == 'POST':
+		try:
+			data = request.get_json(force=True)
+			result = sqlEmployee.get_all_data(token=data['token'])
+			if result == None:
+				raise Exception("Could not retreive requested Employee data")
+
+
+			return returnEncrypted(data['token'], result, 200)
+		except Exception as e:
+			return returnEncrypted(data['token'], {"error": str(e)}, 400)
 
 @app.route('/api/v1/updateEmployee', methods=['POST'])
 def updateEmployee():
@@ -403,7 +419,7 @@ def createSisterhood():
 		try:
 			data, token = decryptRecieved(request)
 
-			if(not sqlSisters.create(data["branch1"],data["branch2"],data["location"], token=token)):
+			if(not sqlSisters.create(data["branch1"],data["branch2"],data["location"], data['access_code_1'], data['access_code_2'], token=token)):
 				raise Exception("Could not create new Sisterhood, likely duplicate entry")
 
 			return returnEncrypted(token, {"success": "Table Insertion Complete"}, 200)
@@ -610,6 +626,19 @@ def updateReservation():
 				raise Exception("Could not update Reservation")
 
 			return returnEncrypted(token, {"success": "Table Update Complete"}, 200)
+		except Exception as e:
+			return returnEncrypted(token, {"error": str(e)}, 400)
+		
+@app.route('/api/v1/createAtSister', methods=['POST'])
+def createAtSister():
+	if request.method == 'POST':
+		try:
+			data, token = decryptRecieved(request)
+
+			if(not sqlReservations.create_at_sister(data['branch_id'], data['cus_name'], data['cus_number'], data['size'], data['requirements'], data['datetime'], token=token)):
+				raise Exception("Could not create new Reservation, likely duplicate entry")
+
+			return returnEncrypted(token, {"success": "Table Insertion Complete"}, 200)
 		except Exception as e:
 			return returnEncrypted(token, {"error": str(e)}, 400)
 
@@ -1130,6 +1159,19 @@ def getCategories():
 		except Exception as e:
 			return returnEncrypted(data['token'], {"error": str(e)}, 400)
 
+@app.route('/api/v1/listDateReservations', methods=['POST'])
+def listDateReservations():
+	if request.method == 'POST':
+		try:
+			data, token = decryptRecieved(request)
+
+			result = sqlReservations.list_date(data['branch_id'], data['date'], token=token)
+			if result == None:
+				raise Exception("Could not retreive Reservations from database")
+
+			return returnEncrypted(token, result, 200)
+		except Exception as e:
+			return returnEncrypted(token, {"error": str(e)}, 400)
 
 ###
 ### 		MAIN
