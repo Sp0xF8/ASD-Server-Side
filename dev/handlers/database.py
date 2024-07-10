@@ -763,12 +763,12 @@ class sqlDiscounts:
 
 class sqlSisters:
 	@check_auth
-	def create(branch1, branch2, location) -> bool:
+	def create(branch1, branch2, location, access_code_1, access_code_2) -> bool:
 		try:
 
 			cnx = pool.get_connection()
 			cursor = cnx.cursor()
-			cursor.execute("INSERT INTO tblBranches (name) VALUES (%s), (%s)", [branch1, branch2])
+			cursor.execute("INSERT INTO tblBranches (name, access_code) VALUES (%s, %s), (%s, %s)", [branch1, access_code_1, branch2, access_code_2])
 
 			cursor.execute("INSERT INTO tblLocations (city) VALUES (%s)", [location])
 
@@ -1023,12 +1023,96 @@ class sqlReservations:
 			if cnx:
 				cnx.close()
 
+	def create_at_sister(branch_id, cus_name, cus_number, size, requirements, datetime) -> bool:
+		try:
+			cnx = pool.get_connection()
+			cursor = cnx.cursor()
+
+			cursor.execute("""
+					WITH sister_branch AS (
+						SELECT branch_id_1, branch_id_2 
+						FROM lnkSisterBranches 
+						WHERE branch_id_1 = %s OR branch_id_2 = %s
+					)
+					INSERT INTO tblReservations 
+						(branch_id, cus_name, cus_number, size, requirements, datetime) 
+					VALUES 
+						((SELECT CASE 
+									WHEN branch_id_1 = %s THEN branch_id_2 
+									ELSE branch_id_1 
+								END 
+						FROM sister_branch), %s, %s, %s, %s, %s)
+				""", [branch_id, branch_id, branch_id, cus_name, cus_number, size, requirements, datetime])
+			cnx.commit()
+			return True
+		except sqlError as e:
+			print("Error creating reservation: ", e)
+
+			if e.errno == 1452:
+				raise Exception("Branch does not exist")
+
+			if e.errno == 1062:
+				raise Exception("Reservation already exists")
+
+			raise Exception(e)
+		except Exception as e:
+			print("Error creating reservation: ", e)
+			raise Exception(e)
+		finally:
+			if cursor:
+				cursor.close()
+			if cnx:
+				cnx.close()
+
+
 	@check_auth
 	def get(branch_id) -> list:
 		try:
 			cnx = pool.get_connection()
 			cursor = cnx.cursor()
 			cursor.execute("SELECT * FROM tblReservations WHERE branch_id = %s", [branch_id])
+			if cursor.rowcount == 0:
+				raise Exception("No reservations found")
+			result = cursor.fetchall()
+
+			retlist = []
+			for res in result:
+				reslist = list(res)
+				print(reslist)
+
+				reslist[6] = reslist[6].strftime("%Y-%m-%d %H:%M:%S")
+				retlist.append([reslist[0], reslist[1], reslist[2], reslist[3], reslist[4], reslist[5], reslist[6]])
+
+			cnx.commit()
+
+			return retlist
+		except sqlError as e:
+			print("Error getting reservations: ", e)
+			raise Exception(e)
+		except Exception as e:
+			print("Error getting reservations: ", e)
+			raise Exception(e)
+		finally:
+			if cursor:
+				cursor.close()
+			if cnx:
+				cnx.close()
+
+
+	@check_auth
+	def list_date(branch_id, date) -> list:
+		try:
+			cnx = pool.get_connection()
+			cursor = cnx.cursor()
+
+			datetimeObj = datetime.strptime(date, "%Y-%m-%d %H:%M:%S")
+			date_str = datetimeObj.strftime("%Y-%m-%d")
+
+			# Use a wildcard to match any time on the given date
+			cursor.execute(
+				"SELECT * FROM tblReservations WHERE branch_id = %s AND datetime LIKE %s",
+				(branch_id, f"{date_str}%")
+			)
 			if cursor.rowcount == 0:
 				raise Exception("No reservations found")
 			result = cursor.fetchall()
