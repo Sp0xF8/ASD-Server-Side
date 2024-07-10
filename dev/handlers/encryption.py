@@ -115,17 +115,43 @@ class Encryption:
 			else:
 				message = self.__toString({"data": dick})
 
-			encMessage = self.public_keys[token].encrypt(
-				message.encode(),
-				padding.OAEP(
-					mgf=padding.MGF1(algorithm=hashes.SHA256()),
-					algorithm=hashes.SHA256(),
-					label=None,
-				)
-			)
+			dirty_packets = []
+
+			## split message into clean packets of max size 500bytes after being translated to utf8
+
+			messageLen = len(message)
+			print("message len: ", messageLen)
+			jump = 400
+			start = 0
+			end = 0
+			while end < messageLen:
+				end += jump
+				print("loop: ", start, end)
+
+				if end > messageLen:
+					end = messageLen
 
 
-			return  {"transfer": encMessage.decode('latin1')}
+				package = message[start:end]
+
+				e_package = self.public_keys[token].encrypt(
+						package.encode(),
+						padding.OAEP(
+							mgf=padding.MGF1(algorithm=hashes.SHA256()),
+							algorithm=hashes.SHA256(),
+							label=None,
+						)
+					)
+
+				dirty_packets.append(e_package.decode('latin1'))
+				start += jump
+
+			print("clean packets: ", dirty_packets)
+			
+
+
+
+			return  {"transfer": dirty_packets}
 		except Exception as e:
 			print(f"An error occurred while encrypting the message: {e}")
 			return None
