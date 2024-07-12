@@ -540,6 +540,39 @@ class sqlEmployee:
 				cnx.close()
 
 	@check_auth
+	def get_all_data_by_branch(branch_id) -> list:
+		try:
+
+			cnx = pool.get_connection()
+			cursor = cnx.cursor()
+			cursor.execute("SELECT e.id, er.position, e.created_at, e.active FROM tblEmployees e JOIN lnkEmployeeRegister er ON e.id = er.employee_id WHERE er.branch_id = %s", [branch_id])
+			result = cursor.fetchall()
+
+			if result == []:
+				raise Exception("No employees found")
+			
+			retlist = []
+			for res in result:
+				reslist = list(res)
+				reslist[2] = reslist[2].strftime("%Y-%m-%d %H:%M:%S")
+				retlist.append(reslist)
+
+			return retlist
+
+		except sqlError as e:
+			print("Error getting employees: ", e)
+			if e.errno == 1452:
+				raise Exception("Branch does not exist")
+
+			raise Exception(e)
+
+		finally:
+			if cursor:
+				cursor.close()
+			if cnx:
+				cnx.close()
+
+	@check_auth
 	def get(employee_id) -> dict:
 		try:
 			print("Getting employee: ", employee_id)
@@ -870,7 +903,9 @@ class sqlSisters:
 								ls.id,
 								b1.name AS branch1_name,
 								b2.name AS branch2_name,
-								l.city AS location_city
+								l.city AS location_city,
+								b1.id AS branch1_id,
+								b2.id AS branch2_id
 							FROM
 								lnkSisterBranches ls
 							JOIN
@@ -889,6 +924,15 @@ class sqlSisters:
 		except sqlError as e:
 			print("Error getting sisters: ", e)
 			return None
+		
+		except Exception as e:
+			print("Error getting sisters: ", e)
+			return None
+		finally:
+			if cursor:
+				cursor.close()
+			if cnx:
+				cnx.close()
 
 	@check_auth
 	def get(sister_id) -> dict:
@@ -1031,7 +1075,9 @@ class sqlSisters:
 								ls.id,
 								b1.name AS branch1_name,
 								b2.name AS branch2_name,
-								l.city AS location_city
+								l.city AS location_city,
+								b1.id AS branch1_id,
+								b2.id AS branch2_id
 							FROM
 								lnkSisterBranches ls
 							JOIN
@@ -2119,11 +2165,11 @@ class sqlAllergins:
 class sqlOrders:
 
 	@check_auth
-	def create(branch_id, discount, drinks, food) -> bool:
+	def create(branch_id, discount, drinks, food, delivery) -> bool:
 		try:
 			cnx = pool.get_connection()
 			cursor = cnx.cursor()
-			cursor.execute("INSERT INTO tblOrders (branch_id, discount) VALUES (%s, %s)", [branch_id, discount])
+			cursor.execute("INSERT INTO tblOrders (branch_id, discount, delivery) VALUES (%s, %s, %s)", [branch_id, discount, delivery])
 
 			if cursor.rowcount == 0:
 				raise Exception("Order could not be created")
@@ -2131,43 +2177,43 @@ class sqlOrders:
 			cursor.execute("SELECT LAST_INSERT_ID()")
 			order_id = cursor.fetchone()[0]
 
-			# for drink in drinks:
-			# 	try:
+			for drink in drinks:
+				try:
 					
-			# 		cursor.execute("""
-			# 			UPDATE 
-			# 				lnkInventory i
-			# 			JOIN 
-			# 				lnkDrinkIngredients d ON i.stock_id = d.stock_id
-			# 			SET 
-			# 				i.current_stock = i.current_stock - d.count_req
-			# 			WHERE 
-			# 				d.drink_id = %s 
-			# 			AND 
-			# 				i.branch_id = %s
-			# 		""", [drink[0], branch_id])
+					cursor.execute("""
+						UPDATE 
+							lnkInventory i
+						JOIN 
+							lnkDrinkIngredients d ON i.stock_id = d.stock_id
+						SET 
+							i.current_stock = i.current_stock - d.count_req
+						WHERE 
+							d.drink_id = %s 
+						AND 
+							i.branch_id = %s
+					""", [drink[0], branch_id])
 
-			# 		cursor.execute("INSERT INTO lnkDrinkSales (order_id, item_id, type, quantity, timed_price) VALUES (%s, %s, %s, %s, (SELECT price FROM lnkDrinkPrices WHERE drink_id = %s AND type = %s))", [order_id, drink[0], drink[2], drink[1], drink[0], drink[2]])
-			# 	except sqlError as e:
-			# 		if e.errno == 1452:
-			# 			cnx.rollback()
-			# 			raise Exception(f"Drink does not exist: {drink[0]}")
+					cursor.execute("INSERT INTO lnkDrinkSales (order_id, item_id, type, quantity, timed_price) VALUES (%s, %s, %s, %s, (SELECT price FROM lnkDrinkPrices WHERE drink_id = %s AND type = %s))", [order_id, drink[0], drink[2], drink[1], drink[0], drink[2]])
+				except sqlError as e:
+					if e.errno == 1452:
+						cnx.rollback()
+						raise Exception(f"Drink does not exist: {drink[0]}")
 					
-			# 		if e.errno == 1062:
-			# 			cnx.rollback()
-			# 			raise Exception("Drink already exists")
+					if e.errno == 1062:
+						cnx.rollback()
+						raise Exception("Drink already exists")
 					
-			# 		if e.errno == 1048:
-			# 			cnx.rollback()
-			# 			raise Exception("Drink ingredients not available")
+					if e.errno == 1048:
+						cnx.rollback()
+						raise Exception("Drink ingredients not available")
 					
-			# 		if e.errno == 1690:
-			# 			cnx.rollback()
-			# 			cursor.execute("SELECT name FROM tblDrinks WHERE id = %s", [drink[0]])
-			# 			drink_name = cursor.fetchone()[0]
-			# 			raise Exception(f"Drink ingredients not available for item: {drink_name}")
+					if e.errno == 1690:
+						cnx.rollback()
+						cursor.execute("SELECT name FROM tblDrinks WHERE id = %s", [drink[0]])
+						drink_name = cursor.fetchone()[0]
+						raise Exception(f"Drink ingredients not available for item: {drink_name}")
 
-			# 		raise Exception(e)
+					raise Exception(e)
 
 			for foo in food:
 				try:
@@ -2226,6 +2272,7 @@ class sqlOrders:
 				SELECT 
 					o.id AS order_id,
 					o.created_at AS order_created_at,
+					o.completed_at AS order_completed_at,
 					td.name AS drink_name,
 					ds.quantity AS drink_quantity,
 					tf.name AS food_name,
@@ -2242,6 +2289,79 @@ class sqlOrders:
 					tblFoods tf ON fs.item_id = tf.id
 				WHERE 
 					o.branch_id = %s
+				AND
+					o.completed = 1
+				""", [branch_id])
+
+			results = cursor.fetchall()
+			if cursor.rowcount == 0:
+				raise Exception("No orders found")
+
+			returned_orders = {}
+			for order_id, order_created_at, order_completed_at, drink_name, drink_quantity, food_name, food_quantity in results:
+				if order_id in returned_orders:
+					returned_orders[order_id][3].add((drink_name, drink_quantity))
+					returned_orders[order_id][4].add((food_name, food_quantity))
+				else:
+					returned_orders[order_id] = [
+						order_id,
+						order_created_at,
+						order_completed_at,
+						{(drink_name, drink_quantity)},
+						{(food_name, food_quantity)}
+					]
+			
+			retlist = []
+			for order in returned_orders:
+				order = returned_orders[order]
+
+				order[1] = order[1].strftime("%Y-%m-%d %H:%M:%S")
+				order[2] = order[2].strftime("%Y-%m-%d %H:%M:%S")
+				order[3] = list(order[3])
+				order[3] = list(order[4])
+				retlist.append(order)
+
+			return retlist
+		except sqlError as e:
+			print("Error getting orders: ", e)
+			raise Exception(e)
+		except Exception as e:
+			print("Error getting orders: ", e)
+			raise Exception(e)
+		finally:
+			if cursor:
+				cursor.close()
+			if cnx:
+				cnx.close()
+
+
+	@check_auth
+	def get_unserved(branch_id) -> list:
+		try:
+			cnx = pool.get_connection()
+			cursor = cnx.cursor()
+			cursor.execute("""
+				SELECT 
+					o.id AS order_id,
+					o.created_at AS order_created_at,
+					td.name AS drink_name,
+					ds.quantity AS drink_quantity,
+					tf.name AS food_name,
+					fs.quantity AS food_quantity
+				FROM 
+					tblOrders o
+				LEFT JOIN 
+					lnkDrinkSales ds ON o.id = ds.order_id
+				LEFT JOIN 
+					tblDrinks td ON ds.item_id = td.id
+				LEFT JOIN 
+					lnkFoodSales fs ON o.id = fs.order_id
+				LEFT JOIN 
+					tblFoods tf ON fs.item_id = tf.id
+				WHERE 
+					o.branch_id = %s
+				AND
+					o.completed = 0
 				""", [branch_id])
 
 			results = cursor.fetchall()
@@ -2305,6 +2425,7 @@ class sqlOrders:
 			retlist = list(result)
 			retlist[2] = retlist[2].strftime("%Y-%m-%d %H:%M:%S")
 
+			retlist[5] = retlist[5].strftime("%Y-%m-%d %H:%M:%S")
 
 
 			return retlist, drinks, food
@@ -2419,12 +2540,94 @@ class sqlOrders:
 				cnx.close()
 
 	@check_auth
-	def find(drink, food):
+	def serve(order_id):
 		try:
 			cnx = pool.get_connection()
 			cursor = cnx.cursor()
-			cursor.execute("SELECT * FROM tblOrders WHERE id IN (SELECT order_id FROM lnkOrderDrinks WHERE drink_id = %s) OR id IN (SELECT order_id FROM lnkOrderFood WHERE food_id = %s) ORDER BY created_at DESC LIMIT 10", [drink, food])
+
+			now = datetime.now()
+			cursor.execute("UPDATE tblOrders SET completed = 1, completed_at = %s WHERE id = %s", [now, order_id])
+			cnx.commit()
+			return True
+		except sqlError as e:
+			if e.errno == 1452:
+				raise Exception("Order does not exist")
+			raise Exception(e)
+		except Exception as e:
+			print("Error serving order: ", e)
+			raise Exception(e)
+		finally:
+			if cursor:
+				cursor.close()
+			if cnx:
+				cnx.close()
+
+	@check_auth
+	def unserve(order_id):
+		try:
+			cnx = pool.get_connection()
+			cursor = cnx.cursor()
+
+			now = datetime.now()
+			cursor.execute("UPDATE tblOrders SET completed = 0, completed_at = NULL WHERE id = %s", [now, order_id])
+			cnx.commit()
+			return True
+		except sqlError as e:
+			if e.errno == 1452:
+				raise Exception("Order does not exist")
+			raise Exception(e)
+		except Exception as e:
+			print("Error serving order: ", e)
+			raise Exception(e)
+		finally:
+			if cursor:
+				cursor.close()
+			if cnx:
+				cnx.close()
+
+	@check_auth
+	def find(branch_id, drink, food):
+		try:
+			cnx = pool.get_connection()
+			cursor = cnx.cursor()
+			cursor.execute("""
+				SELECT
+					o.id AS order_id,
+					o.created_at AS order_created_at,
+					td.name AS drink_name,
+					ds.quantity AS drink_quantity,
+					tf.name AS food_name,
+					fs.quantity AS food_quantity
+				FROM
+					tblOrders o
+				LEFT JOIN
+					lnkDrinkSales ds ON o.id = ds.order_id	
+				LEFT JOIN
+					tblDrinks td ON ds.item_id = td.id
+				LEFT JOIN
+					lnkFoodSales fs ON o.id = fs.order_id
+				LEFT JOIN
+					tblFoods tf ON fs.item_id = tf.id
+				WHERE
+					o.branch_id = %s
+				AND
+					o.id IN (
+							SELECT order_id FROM lnkOrderDrinks WHERE drink_id = %s
+						) 
+				OR o.id IN (
+							SELECT order_id FROM lnkOrderFood WHERE food_id = %s
+						) 
+				ORDER BY o.created_at DESC LIMIT 15
+				""", [drink, food])
 			result = cursor.fetchall()
+
+			if result == []:
+				raise Exception("No orders found")
+			
+			retlist = []
+			for res in result:
+				reslist = list(res)
+				reslist[1] = reslist[1].strftime("%Y-%m-%d %H:%M:%S")
 
 			return result
 		except sqlError as e:
