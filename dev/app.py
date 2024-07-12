@@ -367,6 +367,20 @@ def getAllEmployeeData():
 			return returnEncrypted(data['token'], result, 200)
 		except Exception as e:
 			return returnEncrypted(data['token'], {"error": str(e)}, 400)
+		
+@app.route('/api/v1/getEmployeeDataByBranch', methods=['POST'])
+def getEmployeeDataByBranch():
+	if request.method == 'POST':
+		try:
+			data, token = decryptRecieved(request)
+			result = sqlEmployee.get_all_data_by_branch(data["branch_id"], token=token)
+			if result == None:
+				raise Exception("Could not retreive requested Employee data")
+
+
+			return returnEncrypted(token, result, 200)
+		except Exception as e:
+			return returnEncrypted(token, {"error": str(e)}, 400)
 
 @app.route('/api/v1/updateEmployee', methods=['POST'])
 def updateEmployee():
@@ -1035,7 +1049,7 @@ def createOrder():
 		try:
 			data, token = decryptRecieved(request)
 
-			if(not sqlOrders.create(data['branch_id'], data['discount'], data['drinks'], data['food'], token=token)):
+			if(not sqlOrders.create(data['branch_id'], data['discount'], data['drinks'], data['food'], data['delivery'], token=token)):
 				raise Exception("Could not create new Order, likely duplicate entry")
 
 			return returnEncrypted(token, {"success": "Table Insertion Complete"}, 200)
@@ -1049,6 +1063,20 @@ def getOrders():
 			data, token = decryptRecieved(request)
 
 			result = sqlOrders.get_all(data['branch_id'], token=token)
+			if result == None:
+				raise Exception("Could not retreive Orders from database")
+			
+			return returnEncrypted(token, result, 200)
+		except Exception as e:
+			return returnEncrypted(token, {"error": str(e)}, 400)
+		
+@app.route('/api/v1/getUnservedOrders', methods=['POST'])
+def getUnservedOrders():
+	if request.method == 'POST':
+		try:
+			data, token = decryptRecieved(request)
+
+			result = sqlOrders.get_unserved(data['branch_id'], token=token)
 			if result == None:
 				raise Exception("Could not retreive Orders from database")
 			
@@ -1083,6 +1111,45 @@ def updateOrder():
 		except Exception as e:
 			return returnEncrypted(token, {"error": str(e)}, 400)
 		
+@app.route('/api/v1/serveOrder', methods=['POST'])
+def serveOrder():
+	if request.method == 'POST':
+		try:
+			data, token = decryptRecieved(request)
+
+			if(not sqlOrders.serve(data['order_id'], token=token)):
+				raise Exception("Could not serve Order")
+
+			return returnEncrypted(token, {"success": "Order Served"}, 200)
+		except Exception as e:
+			return returnEncrypted(token, {"error": str(e)}, 400)
+		
+@app.route('/api/v1/unserveOrder', methods=['POST'])
+def unserveOrder():
+	if request.method == 'POST':
+		try:
+			data, token = decryptRecieved(request)
+
+			if(not sqlOrders.unserve(data['order_id'], token=token)):
+				raise Exception("Could not unserve Order")
+
+			return returnEncrypted(token, {"success": "Order unserved"}, 200)
+		except Exception as e:
+			return returnEncrypted(token, {"error": str(e)}, 400)
+		
+@app.route('/api/v1/findOrder', methods=['POST'])
+def findOrder():
+	if request.method == 'POST':
+		try:
+			data, token = decryptRecieved(request)
+
+			result = sqlOrders.find(data['branch_id'], data['drink'], data['food'], token=token)
+			if result == None:
+				raise Exception("Could not find Order")
+
+			return returnEncrypted(token, result, 200)
+		except Exception as e:
+			return returnEncrypted(token, {"error": str(e)}, 400)
 
 @app.route('/api/v1/getMenu', methods=['POST'])
 def getMenu():
