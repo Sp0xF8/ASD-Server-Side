@@ -1,9 +1,17 @@
+# Created by 
+#	22019799, Callum H.
+# hamayon put your name here
+
 from flask import Flask, request, jsonify, render_template_string
-from handlers.database import sqlBranch, sqlLocation, sqlEmployee, sqlAuth, sqlSisters, sqlEmployeeDiscounts, sqlDiscounts, sqlReservations, sqlStock, sqlInventory, sqlFood, sqlDrink, sqlAllergins, sqlOrders, sqlMenu, sqlManger
+from handlers.database import (sqlBranch, sqlLocation, sqlEmployee, sqlAuth, sqlSisters, 
+							   sqlEmployeeDiscounts, sqlDiscounts, sqlReservations, sqlStock, 
+							   sqlInventory, sqlFood, sqlDrink, sqlAllergins, sqlOrders, sqlMenu, 
+							   sqlManger, sqlReports
+							   )
 import logging
 from collections import deque
 from handlers.encryption import Encryption
-import sys
+import sys, os
 
 app = Flask(__name__)
 
@@ -1239,11 +1247,91 @@ def listDateReservations():
 			return returnEncrypted(token, result, 200)
 		except Exception as e:
 			return returnEncrypted(token, {"error": str(e)}, 400)
+		
+###
+### 		REOPORT API ROUTES
+###			
+
+
+@app.route('/api/v1/getAVGBranchCompletion', methods=['POST'])
+def getAVGBranchCompletion():
+	if request.method == 'POST':
+		try:
+			data, token = decryptRecieved(request)
+
+			result = sqlReports.get_order_completion_times(data['branch_id'], data['start_datetime'], data['end_datetime'],  token=token)
+
+			return returnEncrypted(token, result, 200)
+		except Exception as e:
+			return returnEncrypted(token, {"error": str(e)}, 400)
+
+
+@app.route('/api/v1/getMMOrderCompletion', methods=['POST'])
+def getMMOrderCompletion():
+	if request.method == 'POST':
+		try:
+			data, token = decryptRecieved(request)
+
+			result = sqlReports.get_min_max_order_completion_times(data['branch_id'], data['start_datetime'], data['end_datetime'],  token=token)
+
+			return returnEncrypted(token, result, 200)
+		except Exception as e:
+			return returnEncrypted(token, {"error": str(e)}, 400)
+		
+@app.route('/api/v1/getDailySalesBranch', methods=['POST'])
+def getDailySalesBranch():
+	if request.method == 'POST':
+		try:
+			data, token = decryptRecieved(request)
+
+			result = sqlReports.get_daily_sales(data['branch_id'], data['start_datetime'], data['end_datetime'],  token=token)
+
+			return returnEncrypted(token, result, 200)
+		except Exception as e:
+			return returnEncrypted(token, {"error": str(e)}, 400)
+		
+#	def get_daily_sales_by_item(branch_id, item_id, type, start_datetime, end_datetime):
+@app.route('/api/v1/getDailySalesItem', methods=['POST'])
+def getDailySalesItem():
+	if request.method == 'POST':
+		try:
+			data, token = decryptRecieved(request)
+
+			result = sqlReports.get_daily_sales_by_item(data['branch_id'], data['item_id'], data['type'], data['start_datetime'], data['end_datetime'],  token=token)
+
+			return returnEncrypted(token, result, 200)
+		except Exception as e:
+			return returnEncrypted(token, {"error": str(e)}, 400)
+
+
+#	def get_daily_profit(branch_id, start_datetime, end_datetime):
+@app.route('/api/v1/getDailyProfit', methods=['POST'])
+def getDailyProfit():
+	if request.method == 'POST':
+		try:
+			data, token = decryptRecieved(request)
+
+			result = sqlReports.get_daily_profit(data['branch_id'], data['start_datetime'], data['end_datetime'], token=token)
+
+			return returnEncrypted(token, result, 200)
+		except Exception as e:
+			return returnEncrypted(token, {"error": str(e)}, 400)
 
 ###
 ### 		MAIN
 ###
 
 if __name__ == '__main__':
+
+	##get the files directory
+	dir_path = os.path.dirname(os.path.realpath(__file__))
+	##delete every file in the directory keys/hs
+	for file in os.listdir(dir_path+"/keys/hs"):
+		os.remove(dir_path+"/keys/hs/"+file)
+
+	print("cleared previous locked keys")
+
+
+
 	app.run(debug=True)
 	print("tuh")
