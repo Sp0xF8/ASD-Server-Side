@@ -1,3 +1,5 @@
+# Created by 
+#	22019799, Callum H.
 import sys
 import os
 from mysql.connector import Error as sqlError
@@ -11,7 +13,7 @@ import random
 ## import sha-256 for password hashing
 import hashlib
 import time
-from datetime import datetime
+from datetime import datetime, timedelta
 import os
 
 
@@ -114,7 +116,7 @@ class sqlAuth:
 
 	def check_token(token) -> int:
 		try:
-			print("Checking token: ", token)
+			print(token)
 			if token == '':
 				return 0
 			cnx = pool.get_connection()
@@ -127,13 +129,16 @@ class sqlAuth:
 			tokenret = cursor.fetchone()
 
 			timestamp = tokenret[3] #datetime.datetime timestamp
-
-			if (datetime.now() - timestamp).seconds > 3600:
-				print("Token expired")
+			now = datetime.now()
+			
+			if (now - timestamp) > timedelta(minutes=30):
+				print(now, timestamp)
+				print("Token is expired")
 				sqlAuth.delete_token(token)
-				return 1
+				raise Exception("Token is expired")
 
-			print("Token is Valid")
+
+			# print("Token is Valid")
 
 			return 2
 
@@ -172,7 +177,7 @@ class sqlAuth:
 
 	def update_token(token) -> bool:
 		try:
-			print("Updating token: ", token)
+			# print("Updating token: ", token)
 			cnx = pool.get_connection()
 			cursor = cnx.cursor()
 			cursor.execute("UPDATE tblTokens SET created_at = %s WHERE token = %s", [datetime.now(), token])
@@ -202,7 +207,7 @@ class sqlAuth:
 			if user == None:
 				return '', '', ''
 
-			print("User found: ", user[3])
+			# print("User found: ", user[3])
 
 			cursor.execute("SELECT branch_id, position FROM lnkEmployeeRegister WHERE employee_id = %s", [user[0]])
 			posBranch = cursor.fetchone()
@@ -211,13 +216,13 @@ class sqlAuth:
 
 			token_exists = True if token != '' else False
 
-			print("Token exists: ", token_exists)
+			# print("Token exists: ", token_exists)
 
 			if token_exists:
-				print("Token exists, deleting")
+				# print("Token exists, deleting")
 				sqlAuth.delete_token(token)
 
-			print("Creating new token")
+			# print("Creating new token")
 
 			token = sqlAuth.create_token(user[0])
 			return token, user[0], posBranch
@@ -1522,6 +1527,10 @@ class sqlInventory:
 			cursor = cnx.cursor()
 			cursor.execute("SELECT s.id, s.name, i.current_stock FROM lnkInventory i JOIN tblStock s ON i.stock_id = s.id WHERE i.branch_id = %s", [branch_id])
 			result = cursor.fetchall()
+
+			if result == []:
+				raise Exception("Inventory is empty")
+
 			return result
 		except sqlError as e:
 			print("Error getting inventory: ", e)
@@ -1832,6 +1841,9 @@ class sqlFood:
 		except sqlError as e:
 			if e.errno == 1452:
 				raise Exception("Food does not exist")
+
+			if e.errno == 1451:
+				raise Exception("Food is in an order, cannot be deleted")
 			raise Exception(e)
 		except Exception as e:
 			print("Error deleting food: ", e)
@@ -2041,6 +2053,8 @@ class sqlDrink:
 		except sqlError as e:
 			if e.errno == 1452:
 				raise Exception("Drink does not exist")
+			if e.errno == 1451:
+				raise Exception("Food is in an order, cannot be deleted")
 			raise Exception(e)
 		except Exception as e:
 			print("Error deleting drink: ", e)
@@ -2179,7 +2193,7 @@ class sqlOrders:
 
 			for drink in drinks:
 				try:
-					
+					print("Updating drink: ", drink)
 					cursor.execute("""
 						UPDATE 
 							lnkInventory i
@@ -2193,19 +2207,21 @@ class sqlOrders:
 							i.branch_id = %s
 					""", [drink[0], branch_id])
 
-					cursor.execute("INSERT INTO lnkDrinkSales (order_id, item_id, type, quantity, timed_price) VALUES (%s, %s, %s, %s, (SELECT price FROM lnkDrinkPrices WHERE drink_id = %s AND type = %s))", [order_id, drink[0], drink[2], drink[1], drink[0], drink[2]])
 				except sqlError as e:
 					if e.errno == 1452:
 						cnx.rollback()
 						raise Exception(f"Drink does not exist: {drink[0]}")
-					
-					if e.errno == 1062:
-						cnx.rollback()
-						raise Exception("Drink already exists")
-					
 					if e.errno == 1048:
 						cnx.rollback()
 						raise Exception("Drink ingredients not available")
+				try:
+					cursor.execute("INSERT INTO lnkDrinkSales (order_id, item_id, type, quantity, timed_price) VALUES (%s, %s, %s, %s, (SELECT price FROM lnkDrinkPrices WHERE drink_id = %s AND type = %s))", [order_id, drink[0], drink[1], drink[2], drink[0], drink[1]])
+				except sqlError as e:
+
+					if e.errno == 1062:
+						cnx.rollback()
+						raise Exception("Drink sale already exists")
+					
 					
 					if e.errno == 1690:
 						cnx.rollback()
@@ -2569,7 +2585,7 @@ class sqlOrders:
 			cursor = cnx.cursor()
 
 			now = datetime.now()
-			cursor.execute("UPDATE tblOrders SET completed = 0, completed_at = NULL WHERE id = %s", [now, order_id])
+			cursor.execute("UPDATE tblOrders SET completed = 0, completed_at = NULL WHERE id = %s", [order_id])
 			cnx.commit()
 			return True
 		except sqlError as e:
@@ -2748,12 +2764,18 @@ class sqlMenu:
 					item_description,
 					main,
 					item_type,
-					(item_type, float(item_price))
+					float(item_price)
 				]
 
-			print(result)
+			
+			retlist = []
+			for item in items:
+				item = items[item]
+				retlist.append(item)
 
-			return result
+			print(retlist)
+
+			return retlist
 		except sqlError as e:
 			print("Error getting menu: ", e)
 			raise Exception(e)
@@ -2874,3 +2896,614 @@ class sqlManger:
 		except Exception as e:
 			print("Error updating manager: ", e)
 			raise Exception(e)
+
+
+class sqlReports:
+
+	##function to return a list of daily averages for order completion time for a given branch with a start date and an end date also include the total number of items in the order
+	@check_auth
+	def get_order_completion_times(branch_id, start_datetime, end_datetime):
+		try:
+
+			##translate the start and end datetime into a datetime object from a datetime string
+			start_date = datetime.strptime(start_datetime, "%Y-%m-%d %H:%M:%S")
+			end_date = datetime.strptime(end_datetime, "%Y-%m-%d %H:%M:%S")
+
+			cnx = pool.get_connection()
+			cursor = cnx.cursor()
+			cursor.execute("""
+				SELECT 
+					AVG(TIMESTAMPDIFF(MINUTE, o.created_at, o.completed_at)) AS avg_time, 
+					COUNT(ds.quantity) + COUNT(fs.quantity) AS total_items
+				FROM 
+					tblOrders o
+				LEFT JOIN 
+					lnkDrinkSales ds ON o.id = ds.order_id
+				LEFT JOIN 
+					lnkFoodSales fs ON o.id = fs.order_id
+				WHERE 
+					o.branch_id = %s 
+				AND 
+					o.completed = 1
+				AND 
+					o.completed_at BETWEEN %s AND %s
+			""", [branch_id, start_date, end_date])
+			result = cursor.fetchone()
+
+			if result == (None, 0):
+				raise Exception("No completed orders found")
+
+
+			print(result)
+			return result
+		except sqlError as e:
+			print("Error getting order completion times: ", e)
+			raise Exception(e)
+		except Exception as e:
+			print("Error getting order completion times: ", e)
+			raise Exception(e)
+		finally:
+			if cursor:
+				cursor.close()
+			if cnx:
+				cnx.close()
+	
+	## function to get the minimum and maximum order completion times for each day for a given branch with a start date and an end date
+	@check_auth
+	def get_min_max_order_completion_times(branch_id, start_datetime, end_datetime):
+		try:
+
+			##translate the start and end datetime into a datetime object from a datetime string
+			start_date = datetime.strptime(start_datetime, "%Y-%m-%d %H:%M:%S")
+			end_date = datetime.strptime(end_datetime, "%Y-%m-%d %H:%M:%S")
+
+			cnx = pool.get_connection()
+			cursor = cnx.cursor()
+			cursor.execute("""
+				SELECT 
+					DATE(o.completed_at) AS date, 
+					MIN(TIMESTAMPDIFF(MINUTE, o.created_at, o.completed_at)) AS min_time, 
+					MAX(TIMESTAMPDIFF(MINUTE, o.created_at, o.completed_at)) AS max_time
+				FROM 
+					tblOrders o
+				WHERE 
+					o.branch_id = %s 
+				AND 
+					o.completed = 1
+				AND 
+					o.completed_at BETWEEN %s AND %s
+				GROUP BY 
+					DATE(o.completed_at)
+			""", [branch_id, start_date, end_date])
+			result = cursor.fetchall()
+
+			if result == []:
+				raise Exception("No completed orders found")
+
+			return result
+		except sqlError as e:
+			print("Error getting min max order completion times: ", e)
+			raise Exception(e)
+		except Exception as e:
+			print("Error getting min max order completion times: ", e)
+			raise Exception(e)
+		finally:
+			if cursor:
+				cursor.close()
+			if cnx:
+				cnx.close()
+
+	## function to get the daily total number of items sold and the total price after discounts for a given branch with a start date and an end date
+	@check_auth
+	def get_daily_sales(branch_id, start_datetime, end_datetime):
+		try:
+
+			##translate the start and end datetime into a datetime object from a datetime string
+			start_date = datetime.strptime(start_datetime, "%Y-%m-%d %H:%M:%S")
+			end_date = datetime.strptime(end_datetime, "%Y-%m-%d %H:%M:%S")
+
+			cnx = pool.get_connection()
+			cursor = cnx.cursor()
+			cursor.execute("""
+				SELECT 
+					o.id AS order_id,
+					o.created_at AS order_created_at,
+					td.name AS drink_name,
+					ds.quantity AS drink_quantity,
+					ds.timed_price AS drink_price,
+					tf.name AS food_name,
+					fs.quantity AS food_quantity,
+					fs.timed_price AS food_price,
+					o.discount AS discount
+				FROM 
+					tblOrders o
+				LEFT JOIN 
+					lnkDrinkSales ds ON o.id = ds.order_id
+				LEFT JOIN 
+					tblDrinks td ON ds.item_id = td.id
+				LEFT JOIN 
+					lnkFoodSales fs ON o.id = fs.order_id
+				LEFT JOIN 
+					tblFoods tf ON fs.item_id = tf.id
+				WHERE 
+					o.branch_id = %s
+				AND
+					o.created_at BETWEEN %s AND %s
+			""", [branch_id, start_date, end_date])
+			result = cursor.fetchall()
+
+			if result == []:
+				raise Exception("No completed orders found")
+			
+			date_index_tuples = []
+			
+			retlist = {}
+			# print(result)
+
+			## using create_at as for the main index, the rest of the data is used to calculate the total price for the day after discounts
+			for order_id, order_created_at, drink_name, drink_quantity, drink_price, food_name, food_quantity, food_price, discount in result:
+
+				drink_creator = {} if drink_name == None else {(drink_quantity, float(drink_price))}
+				food_creator = {} if food_name == None else {(food_quantity, food_price)}
+				##create day from daytime and convert to string
+				order_created_at = order_created_at.strftime("%Y-%m-%d")
+				
+
+				if order_created_at in retlist:
+
+					if order_id in retlist[order_created_at]:
+						if drink_name != None:
+							retlist[order_created_at][order_id][1].add((drink_quantity, float(drink_price)))
+						if food_name != None:
+							retlist[order_created_at][order_id][2].add((food_quantity, food_price))
+						continue
+
+					retlist[order_created_at][order_id] = [
+						discount,
+						drink_creator,
+						food_creator
+					]
+				else:
+					retlist[order_created_at] = {
+						order_id : [
+							discount,
+							drink_creator,
+							food_creator
+						]
+					}
+
+			fin_dict = {}
+			print(retlist)
+
+			for date in retlist:
+				print(date)
+				daily_total = 0
+				daily_food_count = 0
+				daily_drink_count = 0
+				for order in retlist[date]:
+					order_discount = retlist[date][order][0]
+					drink_total = 0
+					for drink in retlist[date][order][1]:
+						drink_total += drink[0] * drink[1]
+						daily_drink_count += drink[0]
+					food_total =0
+					for food in retlist[date][order][2]:
+						food_total += food[0] * food[1]
+						daily_food_count += food[0]
+					order_total = (drink_total + food_total) * order_discount
+					daily_total += order_total
+
+				fin_dict[date] = [daily_total, daily_drink_count, daily_food_count]
+			
+			print(fin_dict)
+
+			fin_list = []
+			for date in fin_dict:
+				fin_list.append([date, fin_dict[date][0], fin_dict[date][1], fin_dict[date][2]])
+
+			
+
+			return fin_list
+		except sqlError as e:
+			print("Error getting daily sales: ", e)
+			raise Exception(e)
+		except Exception as e:
+			print("Error getting daily sales: ", e)
+			raise Exception(e)
+		finally:
+			if cursor:
+				cursor.close()
+			if cnx:
+				cnx.close()
+
+	@check_auth
+	def get_daily_sales_by_item(branch_id, item_id, type, start_datetime, end_datetime):
+		try:
+
+			##translate the start and end datetime into a datetime object from a datetime string
+			start_date = datetime.strptime(start_datetime, "%Y-%m-%d %H:%M:%S")
+			end_date = datetime.strptime(end_datetime, "%Y-%m-%d %H:%M:%S")
+
+			cnx = pool.get_connection()
+			cursor = cnx.cursor()
+
+			if type == "drink":
+
+				cursor.execute("""
+					SELECT 
+						o.id AS order_id,
+						o.created_at AS order_created_at,
+						td.name AS drink_name,
+						ds.quantity AS drink_quantity,
+						ds.timed_price AS drink_price,
+						o.discount AS discount
+					FROM 
+						tblOrders o
+					LEFT JOIN 
+						lnkDrinkSales ds ON o.id = ds.order_id
+					LEFT JOIN 
+						tblDrinks td ON ds.item_id = td.id
+					WHERE 
+						o.branch_id = %s
+					AND
+						ds.item_id = %s
+					AND
+						o.created_at BETWEEN %s AND %s
+				""", [branch_id, item_id, start_date, end_date])
+
+			if type == "food":
+				
+				cursor.execute("""
+					SELECT 
+						o.id AS order_id,
+						o.created_at AS order_created_at,
+						tf.name AS food_name,
+						fs.quantity AS food_quantity,
+						fs.timed_price AS food_price,
+						o.discount AS discount
+					FROM 
+						tblOrders o
+					LEFT JOIN 
+						lnkFoodSales fs ON o.id = fs.order_id
+					LEFT JOIN 
+						tblFoods tf ON fs.item_id = tf.id
+					WHERE 
+						o.branch_id = %s
+					AND
+						fs.item_id = %s
+					AND
+						o.created_at BETWEEN %s AND %s
+				""", [branch_id, item_id, start_date, end_date])
+
+
+
+			result = cursor.fetchall()
+
+			if result == []:
+				raise Exception("No completed orders found")
+			
+			date_index_tuples = []
+			
+			retlist = {}
+			# print(result)
+
+			## using create_at as for the main index, the rest of the data is used to calculate the total price for the day after discounts
+			for order_id, order_created_at, item_name, item_quantity, item_price, discount in result:
+				item_creator = {} if item_name == None else {(item_quantity, float(item_price))}
+				##create day from daytime and convert to string
+				order_created_at = order_created_at.strftime("%Y-%m-%d")
+				
+
+				if order_created_at in retlist:
+
+					if order_id in retlist[order_created_at]:
+						if item_name != None:
+							retlist[order_created_at][order_id][1].add((item_quantity, float(item_price)))
+
+						continue
+
+					retlist[order_created_at][order_id] = [
+						discount,
+						item_creator
+					]
+				else:
+					retlist[order_created_at] = {
+						order_id : [
+							discount,
+							item_creator
+						]
+					}
+
+			fin_list = []
+			print(retlist)
+
+			for date in retlist:
+				print(date)
+				daily_total = 0
+				daily_item_count = 0
+				for order in retlist[date]:
+					order_discount = retlist[date][order][0]
+					item_total = 0
+					for item in retlist[date][order][1]:
+						item_total += item[0] * item[1]
+						daily_item_count += item[0]
+					order_total = item_total * order_discount
+					daily_total += order_total
+
+				fin_list.append([date, daily_total, daily_item_count])
+
+			print(fin_list)
+
+			return fin_list
+		except sqlError as e:
+			print("Error getting daily sales by item: ", e)
+			if e.errno == 1452:
+				raise Exception(f"Item does not exist in {type} table")
+
+			raise Exception(e)
+		except Exception as e:
+			print("Error getting daily sales by item: ", e)
+			raise Exception(e)
+		finally:
+			if cursor:
+				cursor.close()
+			if cnx:
+				cnx.close()
+
+	@check_auth
+	def get_daily_profit(branch_id, start_datetime, end_datetime):
+		try:
+			start_date = datetime.strptime(start_datetime, "%Y-%m-%d %H:%M:%S")
+			end_date = datetime.strptime(end_datetime, "%Y-%m-%d %H:%M:%S")
+
+
+			cnx = pool.get_connection()
+			cursor = cnx.cursor()
+
+			cursor.execute("""
+				SELECT 
+					o.id AS order_id,
+					o.created_at AS order_created_at,
+					td.id AS drink_id,
+					td.name AS drink_name,
+					ds.quantity AS drink_quantity,
+					ds.timed_price AS drink_price,
+					s.id AS stock_id,
+					s.price AS stock_cost,
+					di.count_req AS stock_count,
+					o.discount AS discount
+				FROM 
+					tblOrders o
+				LEFT JOIN 
+					lnkDrinkSales ds ON o.id = ds.order_id
+				LEFT JOIN 
+					tblDrinks td ON ds.item_id = td.id
+				LEFT JOIN
+					lnkDrinkIngredients di ON td.id = di.drink_id
+				LEFT JOIN
+					tblStock s ON di.stock_id = s.id
+				WHERE 
+					o.branch_id = %s
+				AND
+					o.created_at BETWEEN %s AND %s
+			""", [branch_id, start_date, end_date])
+
+			result = cursor.fetchall()
+
+			if not result:
+				raise Exception("No orders found")
+
+			drink_profit = {}
+
+			for row in result:
+				order_id, order_created_at, drink_id, drink_name, drink_quantity, drink_price, stock_id, stock_cost, stock_count, discount = row
+				order_created_at = order_created_at.strftime("%Y-%m-%d")
+
+				if drink_id == None:
+					continue
+
+				# print(row)
+				drink_price = float(drink_price)
+
+				if order_created_at in drink_profit:
+					if order_id in drink_profit[order_created_at]:
+						if drink_id in drink_profit[order_created_at][order_id][1]:
+							if stock_id in drink_profit[order_created_at][order_id][1][drink_id][1]:
+								# print("Skipping")
+								continue
+							# print("Adding stock")
+							drink_profit[order_created_at][order_id][1][drink_id][1][stock_id] = (stock_cost, stock_count)
+							continue
+						# print("Adding drink")
+						drink_profit[order_created_at][order_id][1][drink_id] = [(drink_name, drink_quantity, drink_price), {stock_id: (stock_cost, stock_count)}]
+						continue
+					# print("Adding order")
+					drink_profit[order_created_at][order_id] = [
+						discount,
+						{drink_id: [(drink_name, drink_quantity, drink_price), {stock_id: (stock_cost, stock_count)}]}
+					]
+
+				else:
+					# print("Adding date")
+					drink_profit[order_created_at] = {
+						order_id: [
+							discount,
+							{drink_id: [(drink_name, drink_quantity, drink_price), {stock_id: (stock_cost, stock_count)}]}
+						]
+					}
+
+			# print(drink_profit)
+
+			cursor.execute("""
+				SELECT 
+					o.id AS order_id,
+					o.created_at AS order_created_at,
+					tf.id AS food_id,
+					tf.name AS food_name,
+					fs.quantity AS food_quantity,
+					fs.timed_price AS food_price,
+					s.id AS stock_id,
+					s.price AS stock_cost,
+					fi.count_req AS stock_count,
+					o.discount AS discount
+				FROM 
+					tblOrders o
+				LEFT JOIN 
+					lnkFoodSales fs ON o.id = fs.order_id
+				LEFT JOIN 
+					tblFoods tf ON fs.item_id = tf.id
+				LEFT JOIN
+					lnkFoodIngredients fi ON tf.id = fi.food_id
+				LEFT JOIN
+					tblStock s ON fi.stock_id = s.id
+				WHERE 
+					o.branch_id = %s
+				AND
+					o.created_at BETWEEN %s AND %s
+			""", [branch_id, start_date, end_date])
+
+			result = cursor.fetchall()
+			
+			if result == []:
+				raise Exception("No orders found")
+			
+			food_profit = {}
+
+			for row in result:
+				order_id, order_created_at, food_id, food_name, food_quantity, food_price, stock_id, stock_cost, stock_count, discount = row
+				order_created_at = order_created_at.strftime("%Y-%m-%d")
+
+				if food_id == None:
+					continue
+				# print(row)
+
+				food_price = float(food_price)
+
+				if order_created_at in food_profit:
+					if order_id in food_profit[order_created_at]:
+						if food_id in food_profit[order_created_at][order_id][1]:
+							if stock_id in food_profit[order_created_at][order_id][1][food_id][1]:
+								# print("Skipping")
+								continue
+							# print("Adding stock")
+							food_profit[order_created_at][order_id][1][food_id][1][stock_id] = (stock_cost, stock_count)
+							continue
+						# print("Adding food")
+						food_profit[order_created_at][order_id][1][food_id] = [(food_name, food_quantity, food_price), {stock_id: (stock_cost, stock_count)}]
+						continue
+					# print("Adding order")
+					food_profit[order_created_at][order_id] = [
+						discount,
+						{food_id: [(food_name, food_quantity, food_price), {stock_id: (stock_cost, stock_count)}]}
+					]
+
+				else:
+					# print("Adding date")
+					food_profit[order_created_at] = {
+						order_id: [
+							discount,
+							{food_id: [(food_name, food_quantity, food_price), {stock_id: (stock_cost, stock_count)}]}
+						]
+					}
+
+			# print(food_profit)
+
+
+			##calculate the profit for each day
+			dprofit = {}
+			for date in drink_profit:
+				dprofit[date] = [0, 0, 0]
+				for order in drink_profit[date]:
+					order_sale = 0
+					order_cost = 0
+					order_profit = 0
+					for drink in drink_profit[date][order][1]:
+						drink_price = drink_profit[date][order][1][drink][0][2]
+						drink_cost = 0
+						for stock in drink_profit[date][order][1][drink][1]:
+							stock_cost, stock_count = drink_profit[date][order][1][drink][1][stock]
+							drink_cost += stock_cost * stock_count
+						drink_price *= drink_profit[date][order][0]
+						order_profit += drink_price - drink_cost
+						order_sale += drink_price
+						order_cost += drink_cost
+
+						# print("Drink: ", drink_profit[date][order][1][drink][0][0])
+						# print("Drink Price: ", drink_price)
+						# print("Drink Cost: ", drink_cost)
+						# print("Drink Profit: ", drink_price - drink_cost)
+
+					formatted_cost = float("{:.2f}".format(order_cost + dprofit[date][0]))
+					formatted_sale = float("{:.2f}".format(order_sale + dprofit[date][1]))
+					formatted_profit = float("{:.2f}".format(order_profit + dprofit[date][2]))
+
+					dprofit[date] = [formatted_cost, formatted_sale, formatted_profit]
+			
+			fprofit = {}
+			for date in food_profit:
+				fprofit[date] = [0, 0, 0]
+				for order in food_profit[date]:
+					order_sale = 0
+					order_cost = 0
+					order_profit = 0
+					for food in food_profit[date][order][1]:
+						food_price = food_profit[date][order][1][food][0][2]
+						food_cost = 0
+						for stock in food_profit[date][order][1][food][1]:
+							stock_cost, stock_count = food_profit[date][order][1][food][1][stock]
+							food_cost += stock_cost * stock_count
+						food_price *= food_profit[date][order][0]
+						order_profit += food_price - food_cost
+						order_sale += food_price
+						order_cost += food_cost
+
+						# print("Food: ", food_profit[date][order][1][food][0][0])
+						# print("Food Price: ", food_price)
+						# print("Food Cost: ", food_cost)
+						# print("Food Profit: ", food_price - food_cost)
+
+					formatted_cost = float("{:.2f}".format(order_cost + fprofit[date][0]))
+					formatted_sale = float("{:.2f}".format(order_sale + fprofit[date][1]))
+					formatted_profit = float("{:.2f}".format(order_profit + fprofit[date][2]))
+
+					fprofit[date] = [formatted_cost, formatted_sale, formatted_profit]
+
+			# print("+_____+")
+			# print(dprofit)
+			# print(fprofit)
+
+			combined = {}
+			for date in dprofit:
+				if date not in combined:
+					combined[date] = {
+						"drink": dprofit[date]
+					}
+
+			for date in fprofit:
+				if date in combined:
+					combined[date]["food"] = fprofit[date]
+				else:
+					combined[date] = {
+						"food": fprofit[date]
+					}
+
+
+			combined_set = []
+			for date in combined:
+				combined_set.append([date, (combined[date]["drink"] if 'drink' in combined[date] else [], combined[date]["food"] if 'food' in combined[date] else [])])
+			
+			# print(combined_set)
+
+			
+			return combined_set
+		except sqlError as e:
+			print("SQL Error:", e)
+			raise Exception(e)
+		except Exception as e:
+			print("Error:", e)
+			raise Exception(e)
+		finally:
+			if cursor:
+				cursor.close()
+			if cnx:
+				cnx.close()

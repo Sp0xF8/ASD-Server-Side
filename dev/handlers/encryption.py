@@ -1,3 +1,6 @@
+# Created by 
+#	22019799, Callum H.
+
 from cryptography.hazmat.primitives.asymmetric import rsa, padding
 from cryptography.hazmat.primitives import serialization, hashes
 from cryptography.hazmat.backends import default_backend
@@ -104,7 +107,7 @@ class Encryption:
 
 	def encrypt(self, token, dick):
 		try:
-			print(self.public_keys)
+			# print(self.public_keys)
 
 			if token not in self.public_keys:
 				if not self.load_public_key(token):
@@ -120,13 +123,13 @@ class Encryption:
 			## split message into clean packets of max size 500bytes after being translated to utf8
 
 			messageLen = len(message)
-			print("message len: ", messageLen)
+			# print("message len: ", messageLen)
 			jump = 400
 			start = 0
 			end = 0
 			while end < messageLen:
 				end += jump
-				print("loop: ", start, end)
+				# print("loop: ", start, end)
 
 				if end > messageLen:
 					end = messageLen
@@ -146,7 +149,7 @@ class Encryption:
 				dirty_packets.append(e_package.decode('latin1'))
 				start += jump
 
-			print("clean packets: ", dirty_packets)
+			# print("clean packets: ", dirty_packets)
 			
 
 
